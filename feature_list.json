@@ -1,6 +1,6 @@
 {
   "project": "climate-adaptive-agriculture-copilot",
-  "last_updated": "2026-07-08",
+  "last_updated": "2026-07-13",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -65,13 +65,14 @@
       "id": "feat-004",
       "priority": 4,
       "area": "backend",
-      "name": "Work order creation + approval endpoints",
-      "description": "Step 4 of run_daily_workflow: for farms flagged high-risk by feat-003, create WORK_ORDERS rows with status pending_approval. Add approve/reject endpoints that update WORK_ORDERS.status, approved_by, approved_at.",
-      "user_visible_behavior": "High-risk farms produce a pending work order; calling an approve endpoint flips its status and it disappears from the pending list.",
+      "name": "Plot/risk read endpoints + work order approval endpoints",
+      "description": "Step 4 of run_daily_workflow: for farms flagged high-risk by feat-003, create WORK_ORDERS rows with status pending_approval. Add the read/write endpoints the frontend contract in docs/ui-build-plan.md needs: GET /plots (plot id, name, location, latest risk level), GET /plots/{id}/risk (risk narrative + generated work order), POST /workorders/{id}/approve and POST /workorders/{id}/reject (update WORK_ORDERS.status, approved_by, approved_at).",
+      "user_visible_behavior": "GET /plots lists plots with risk badges; GET /plots/{id}/risk returns the Cortex Agent's narrative + recommended work order; calling approve/reject flips a work order's status and it disappears from the pending list.",
       "dependencies": ["feat-003"],
       "status": "not_started",
       "verification": [
         "curl -X POST /workflow/run creates WORK_ORDERS rows for seeded high-risk farms",
+        "curl GET /plots and /plots/{id}/risk return real Snowflake-backed data",
         "Approve/reject endpoint updates the row and is reflected in a subsequent GET"
       ],
       "evidence": [],
@@ -81,29 +82,30 @@
       "id": "feat-005",
       "priority": 5,
       "area": "frontend",
-      "name": "Single operations screen (risk + pending work orders + approve/reject)",
-      "description": "Scaffold frontend/ per frontend/README.md (create-next-app, then mapbox-gl/react-map-gl/recharts). Build the single '/' screen: today's risk map, pending work orders list, approve/reject buttons calling the feat-004 endpoints.",
-      "user_visible_behavior": "Opening localhost:3000 shows real risk data and pending work orders from the backend, and approving/rejecting one updates the UI.",
-      "dependencies": ["feat-004"],
+      "name": "Three-screen frontend (plot list, risk + work order, approval history/briefing)",
+      "description": "Scaffold frontend/ per frontend/README.md (create-next-app). Build the 3 screens defined in docs/ui-build-plan.md, in that doc's build order: Screen 2 (risk assessment + work order panel, approve/reject) first against feat-004's /plots/{id}/risk and approve/reject endpoints, then Screen 1 (plot list) against /plots, then Screen 3 (approval history + daily briefing) against feat-006's /briefing/today.",
+      "user_visible_behavior": "Opening localhost:3000 shows the plot list; clicking a plot shows the Cortex Agent's risk narrative and recommended work order with approve/reject; a third screen shows today's approved/rejected work orders plus a generated daily briefing.",
+      "dependencies": ["feat-004", "feat-006"],
       "status": "not_started",
       "verification": [
         "npm run build succeeds in frontend/",
-        "Manual walkthrough: load /, see pending work orders, approve one, confirm it moves out of the pending list"
+        "Manual walkthrough: load /, open a plot, approve its work order, confirm it appears in the approval history screen"
       ],
       "evidence": [],
-      "notes": "frontend/ has no package.json yet — this feature includes the initial scaffold, not just the page."
+      "notes": "frontend/ has no package.json yet — this feature includes the initial scaffold, not just the pages."
     },
     {
       "id": "feat-006",
       "priority": 6,
       "area": "backend",
-      "name": "Daily briefing summary assembly",
-      "description": "Step 5 of run_daily_workflow: replace the hardcoded DailyBriefing fields (date, farms_assessed, summary) with real values derived from feat-002/003/004 results.",
-      "user_visible_behavior": "The DailyBriefing returned by /workflow/run accurately reflects the day's real farms_assessed count, high_risk_farms, and work_orders_created.",
+      "name": "Daily briefing summary assembly + /briefing/today endpoint",
+      "description": "Step 5 of run_daily_workflow: replace the hardcoded DailyBriefing fields (date, farms_assessed, summary) with real values derived from feat-002/003/004 results. Add GET /briefing/today, which aggregates today's approved/rejected work orders and returns the generated summary, per the contract in docs/ui-build-plan.md.",
+      "user_visible_behavior": "The DailyBriefing returned by /workflow/run accurately reflects the day's real farms_assessed count, high_risk_farms, and work_orders_created; GET /briefing/today returns the same day's approved/rejected list plus a natural-language summary.",
       "dependencies": ["feat-002", "feat-003", "feat-004"],
       "status": "not_started",
       "verification": [
-        "curl -X POST /workflow/run and confirm every field matches what was actually written to Snowflake this run"
+        "curl -X POST /workflow/run and confirm every field matches what was actually written to Snowflake this run",
+        "curl GET /briefing/today after approving at least one work order and confirm it reflects that approval"
       ],
       "evidence": [],
       "notes": ""

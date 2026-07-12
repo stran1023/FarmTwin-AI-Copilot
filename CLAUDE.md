@@ -21,8 +21,9 @@ verification over speed.
   in `snowflake/coco-prompts.md`; check the "Result" line under each prompt
   to see what has actually been run against the real Snowflake account
   before assuming a table or agent exists.
-- This repo is not yet a git repository (no `.git`). Confirm with `git
-  status` before relying on git history or committing.
+- This repo is a git repository. Run `git status` and `git log --oneline -5`
+  at session start to confirm current branch and recent history before
+  relying on assumptions from prior sessions.
 
 ## Operating Loop
 

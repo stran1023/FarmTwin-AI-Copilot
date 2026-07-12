@@ -10,7 +10,7 @@ Autonomous Workflow track)
 ## Repo layout
 
 ```
-climate-ag-copilot/
+climate-agriculture-copilot/
 ├── snowflake/         # SQL + CoCo session logs — how we built the Snowflake side
 ├── backend/           # FastAPI app: orchestrates the daily workflow
 ├── frontend/          # Next.js dashboard
