@@ -141,7 +141,8 @@ async def run_daily_workflow():
 @app.get("/plots", response_model=list[Plot])
 def get_plots():
     rows = snowflake_client.run_query(
-        "SELECT f.FARM_ID, f.NAME, f.LAT, f.LON, r.FLOOD_RISK, r.DROUGHT_RISK, r.DISEASE_RISK "
+        "SELECT f.FARM_ID, f.NAME, f.LAT, f.LON, f.CROP_TYPE, f.AREA_HECTARES, f.PLANTING_DATE, "
+        "r.FLOOD_RISK, r.DROUGHT_RISK, r.DISEASE_RISK "
         "FROM FARMS f "
         "LEFT JOIN RISK_ASSESSMENTS r ON r.FARM_ID = f.FARM_ID "
         "QUALIFY ROW_NUMBER() OVER (PARTITION BY f.FARM_ID ORDER BY r.TS DESC) = 1 "
@@ -154,6 +155,9 @@ def get_plots():
             lat=row["LAT"],
             lon=row["LON"],
             risk_level=_overall_risk_level(row).lower(),
+            crop_type=row["CROP_TYPE"],
+            area_hectares=row["AREA_HECTARES"],
+            planting_date=row["PLANTING_DATE"],
         )
         for row in rows
     ]

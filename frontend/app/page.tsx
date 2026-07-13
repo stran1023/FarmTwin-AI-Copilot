@@ -1,10 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { getPlots, type Plot } from "@/lib/api";
 import { Card } from "@/components/Card";
 import { RiskBadge } from "@/components/RiskBadge";
+
+const FarmMap = dynamic(() => import("@/components/FarmMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[420px] w-full items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 dark:border-zinc-800">
+      Loading map…
+    </div>
+  ),
+});
 
 export default function PlotListPage() {
   const [plots, setPlots] = useState<Plot[] | null>(null);
@@ -29,6 +39,8 @@ export default function PlotListPage() {
       )}
       {!plots && !error && <p className="text-zinc-500">Loading plots…</p>}
       {plots?.length === 0 && <p className="text-zinc-500">No plots found.</p>}
+
+      {plots && plots.length > 0 && <FarmMap plots={plots} />}
 
       <div className="flex flex-col gap-3">
         {plots?.map((plot) => (

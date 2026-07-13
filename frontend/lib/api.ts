@@ -8,6 +8,9 @@ export interface Plot {
   lat: number;
   lon: number;
   risk_level: RiskLevel;
+  crop_type: string;
+  area_hectares: number;
+  planting_date: string;
 }
 
 export type WorkOrderStatus =

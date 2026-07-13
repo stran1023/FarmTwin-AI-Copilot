@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -48,6 +48,9 @@ class Plot(BaseModel):
     lat: float
     lon: float
     risk_level: str
+    crop_type: str
+    area_hectares: float
+    planting_date: date
 
 
 class PlotRisk(BaseModel):

@@ -4,12 +4,13 @@
 
 - Last Updated: 2026-07-13
 - Repository root: `D:\Snowflake Hackathon\climate-agriculture-copilot`
-- Current Objective: All 6 features (`feat-001` through `feat-006`) are now
+- Current Objective: All 7 features (`feat-001` through `feat-007`) are now
   verified passing. The full stack — backend (`/workflow/run`, `/plots`,
   `/plots/{id}/risk`, `/workorders/{id}/approve`, `/workorders/{id}/reject`,
-  `/briefing/today`) and the 3-screen Next.js frontend — is real and
-  Snowflake/Cortex-backed end to end, with a runtime browser walkthrough
-  proving the full approve/reject write-back loop.
+  `/briefing/today`) and the Next.js frontend (plot map + list, risk/work
+  order approval, daily briefing) — is real and Snowflake/Cortex-backed end
+  to end, with runtime browser walkthroughs proving both the approve/reject
+  write-back loop and the new interactive farm map.
 - Standard startup path: `./init.sh`
 - Standard verification path: `cd backend && python -m compileall app`
   (syntax-only). A real venv exists at `backend/venv` with
@@ -28,11 +29,77 @@
   notes — the Cortex Agent itself flagged this as "corrupted" free text
   during the feat-005 briefing walkthrough), or (c) killing any stray
   `uvicorn` processes left listening on port 8000 from a prior session
-  before starting a new one (hit and resolved once in session 008 — always
-  check `netstat -ano | grep 8000` before assuming a fresh `uvicorn` start
-  succeeded).
+  before starting a new one (hit and resolved once in session 008, again
+  routine-checked in session 009 — always check `netstat -ano | grep 8000`
+  before assuming a fresh `uvicorn` start succeeded).
 
 ## Session Log
+
+### Session 009
+
+- Date: 2026-07-13
+- Goal: Implement `feat-007` — turn Screen 1 into a real interactive farm
+  map (Leaflet + OpenStreetMap) per the user's "as real as possible"
+  direction, plotting each farm at its actual lat/lon with crop/status
+  info in a popup, per the new "Screen 1 v2" section written into
+  `docs/ui-build-plan.md` this session before implementation began.
+- Design decision (recorded in `docs/ui-build-plan.md` and confirmed with
+  the user): Leaflet + OpenStreetMap, not Mapbox (no API key/account
+  needed, renders the farms' real seeded coordinates) and not a stylized
+  non-geo layout (explicitly rejected — user wants real geography). Map
+  supplements, does not replace, the existing card list.
+- Implemented:
+  - Confirmed exact `FARMS` columns via a live `DESCRIBE TABLE` (not just
+    trusting `coco-prompts.md`'s schema doc): `CROP_TYPE VARCHAR`,
+    `PLANTING_DATE DATE`, `AREA_HECTARES FLOAT`.
+  - `backend/app/models/schemas.py`: added `crop_type`, `area_hectares`,
+    `planting_date` to `Plot`.
+  - `backend/app/main.py::get_plots`: extended the `SELECT` to pull those
+    three columns from `FARMS` and populate the new `Plot` fields.
+  - `frontend`: installed `leaflet@1.9.4` + `react-leaflet@5.0.0` (the
+    React-19-compatible major version) + `@types/leaflet`.
+  - `frontend/components/FarmMap.tsx` (new, `'use client'`):
+    `MapContainer` with `bounds`/`boundsOptions` computed via
+    `L.latLngBounds` from the fetched plots (not a hardcoded center/zoom —
+    stays correct if farms are added), real OSM `TileLayer` with required
+    attribution, `L.divIcon` markers colored by risk level (reusing
+    `RiskBadge`'s color families at higher saturation for map visibility),
+    and `Popup`s showing name/crop_type/area_hectares/`RiskBadge`/a
+    `next/link` to `/plots/{id}`.
+  - `frontend/app/page.tsx`: wired `FarmMap` in via `next/dynamic` with
+    `{ ssr: false }` (Leaflet touches `window` at module-load time, which
+    breaks Next's server render pass even inside a `'use client'` page)
+    plus a loading fallback matching the map's fixed height. Existing card
+    list kept unchanged below the map.
+- Verified (runtime, not just build):
+  - `curl GET /plots` showed real values (e.g. farm 1: `"Rice - IR
+    50404"`, 3.2 ha, `2026-06-01`) and a direct `SELECT` against `FARMS`
+    for farms 1-3 matched the API response exactly, field for field.
+  - `npm run build` and `npm run lint` both clean on the first try — no
+    SSR/`window` error, confirming the dynamic-import isolation worked.
+  - Playwright (chromium headless) walkthrough against live `uvicorn` +
+    `next dev`: loaded `/`, confirmed 15 `leaflet-marker-icon` elements
+    rendered over real OpenStreetMap tiles of the Mekong Delta/Can Tho
+    region, colors matching each farm's `risk_level` (4 red/critical,
+    others amber/green). Clicked a marker: popup showed "Tran Van Minh
+    Farm / Rice - IR 50404 - 3.2 ha / CRITICAL / View risk assessment
+    ->", exactly matching that farm's `GET /plots` data and its card-list
+    entry below. Clicked the popup link and landed on `/plots/1` with the
+    real Cortex risk narrative rendered. Zero console/page errors
+    throughout. Screenshots captured (full page + isolated popup element,
+    since the popup didn't land inside the first full-viewport crop).
+  - Checked `netstat -ano | grep`-style port checks before starting both
+    `uvicorn` and `next dev` this session (per session 008's note) — both
+    ports were clean, no stray processes this time.
+- Result: `feat-007` added to `feature_list.json` (new feature, not in
+  the original 6) and moved straight to `passing` with the above evidence.
+- Files updated: `docs/ui-build-plan.md` (new "Screen 1 v2" section,
+  written and confirmed with the user before implementation),
+  `backend/app/models/schemas.py`, `backend/app/main.py`,
+  `frontend/package.json` + `package-lock.json`,
+  `frontend/components/FarmMap.tsx` (new), `frontend/app/page.tsx`,
+  `frontend/lib/api.ts`, `feature_list.json`, `progress.md`.
+- Next best step: no unfinished feature remains in `feature_list.json`.
 
 ### Session 008
 
