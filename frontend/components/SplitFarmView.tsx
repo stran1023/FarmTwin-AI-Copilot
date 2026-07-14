@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getAssets } from "@/lib/api";
+import { getAssets, getDashboardSummary, type DashboardSummary } from "@/lib/api";
 import { useApiData } from "@/lib/useApiData";
 import { DigitalTwinMap } from "@/components/DigitalTwinMap";
 import { DashboardPanel } from "@/components/DashboardPanel";
@@ -23,6 +23,9 @@ function syncUrl(assetId: string | null) {
 export function SplitFarmView({ initialAssetId }: { initialAssetId: string | null }) {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(initialAssetId);
   const { data: assets, error } = useApiData("assets", getAssets);
+  // Same cache key DashboardPanel/CopilotPanel already use (feat-021) --
+  // this adds zero extra network calls, just reads whatever's cached.
+  const { data: summary } = useApiData<DashboardSummary>("dashboard-summary", getDashboardSummary);
 
   function selectAsset(assetId: string) {
     setSelectedAssetId(assetId);
@@ -53,7 +56,12 @@ export function SplitFarmView({ initialAssetId }: { initialAssetId: string | nul
         {assets?.length === 0 && <p className="text-zinc-500">No farm assets found.</p>}
 
         {assets && assets.length > 0 && (
-          <DigitalTwinMap assets={assets} onSelectAsset={selectAsset} selectedAssetId={selectedAssetId} />
+          <DigitalTwinMap
+            assets={assets}
+            onSelectAsset={selectAsset}
+            selectedAssetId={selectedAssetId}
+            weather={summary?.weather}
+          />
         )}
 
         <div className="flex gap-4 text-sm text-zinc-500 dark:text-zinc-400">

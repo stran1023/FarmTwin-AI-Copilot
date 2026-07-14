@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { AssetOverview } from "@/lib/api";
+import type { AssetOverview, WeatherReading } from "@/lib/api";
 import { FarmTerrain, GRID_SIZE, TILE_H, TILE_W, isoPosition } from "@/components/FarmTerrain";
 import { FishPondMarker } from "@/components/FishPondMarker";
 import { ChickenCoopMarker } from "@/components/ChickenCoopMarker";
 import { RiceFieldMarker } from "@/components/RiceFieldMarker";
 import { FruitOrchardMarker } from "@/components/FruitOrchardMarker";
+import { WeatherAmbience } from "@/components/WeatherAmbience";
 
 const ASSET_ICON: Record<string, string> = {
   fish_pond: "🐟",
@@ -52,10 +53,12 @@ export function DigitalTwinMap({
   assets,
   onSelectAsset,
   selectedAssetId,
+  weather,
 }: {
   assets: AssetOverview[];
   onSelectAsset: (assetId: string) => void;
   selectedAssetId?: string | null;
+  weather?: WeatherReading | null;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const centerOffset = ((GRID_SIZE - 1) * TILE_W) / 2;
@@ -65,6 +68,8 @@ export function DigitalTwinMap({
       className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-gradient-to-b from-sky-200 via-sky-50 to-emerald-50 dark:border-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-950"
       style={{ height: (GRID_SIZE - 1) * TILE_H + 160 }}
     >
+      <WeatherAmbience weather={weather ?? null} />
+
       <div className="absolute" style={{ left: centerOffset, top: 60 }}>
         <FarmTerrain assetPositions={assets.map((a) => ({ gx: a.grid_x, gy: a.grid_y }))} />
 

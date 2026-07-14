@@ -454,13 +454,18 @@
       "description": "Add a lightweight ambience overlay to the digital twin map driven by the real latest WEATHER_READINGS row: a subtle rain-drop CSS animation over the scene when rainfall_mm is meaningfully above zero, soft moving cloud shapes drifting across the sky background, and a sun-glow/brightness tint reflecting temp_c -- layered above feat-023's terrain without obstructing asset markers or interaction.",
       "user_visible_behavior": "The farm scene visually reflects today's real weather (rain, clouds, warmth) rather than a static sky.",
       "dependencies": ["feat-023"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "npm run build && npm run lint succeed in frontend/",
         "Compare the rendered ambience state to the actual current WEATHER_READINGS row for that run to confirm it's driven by real data, not decorative-only"
       ],
-      "evidence": [],
-      "notes": "Lowest-priority visual feature -- purely atmospheric, conveys no asset-status information, safe to defer or drop first if time-constrained."
+      "evidence": [
+        "2026-07-15: Added frontend/components/WeatherAmbience.tsx: a pointer-events-none overlay rendered above FarmTerrain (below markers in paint order but non-interactive throughout, so it never blocks clicks/hover) with 3 real-data-driven layers -- a warm sun-tint gradient whose opacity scales with weather.temp_c (~0.08 around 15C rising to ~0.5 in the high 30s), 2 softly blurred clouds drifting left-to-right via new cloud-drift-a/b CSS keyframes, and animated raindrops (rain-fall keyframe) rendered only when weather.rainfall_mm > 0.5.",
+        "2026-07-15: Wired weather into the tree: DigitalTwinMap.tsx takes an optional weather prop and renders <WeatherAmbience>; SplitFarmView.tsx fetches it via useApiData('dashboard-summary', getDashboardSummary) -- the SAME cache key DashboardPanel/CopilotPanel already use (feat-021), so this adds zero extra network calls, just reads whatever's already cached/fetched.",
+        "2026-07-15: npm run build and npm run lint clean.",
+        "2026-07-15: Verified against live data: GET /dashboard/summary's real weather was rainfall_mm=5.3, temp_c=27.8 at verification time. Playwright screenshot confirmed visible animated raindrops across the map, matching the real >0.5mm rainfall reading (not decorative-only -- would not render if rainfall were ~0). Clicked through all 4 asset markers in sequence afterward and confirmed every click still correctly opened that asset's detail panel with zero console errors, proving the ambience overlay doesn't intercept marker interaction."
+      ],
+      "notes": "Lowest-priority visual feature, as flagged -- purely atmospheric, conveys no asset-status information. Reusing the feat-021 cache key for weather (rather than a separate fetch) keeps this fully aligned with the earlier performance work instead of undoing it."
     },
     {
       "id": "feat-029",
