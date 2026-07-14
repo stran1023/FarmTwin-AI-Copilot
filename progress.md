@@ -19,11 +19,11 @@
   (syntax-only). A real venv exists at `backend/venv` with
   `requirements.txt` installed, so runtime verification is also possible.
   Frontend verification: `cd frontend && npm run build && npm run lint`.
-- Highest-priority unfinished feature: `feat-021` — shared frontend
-  data-fetch cache/hook (`feat-020`, the backend connection-reuse fix,
-  is `passing` as of Session 016).
+- Highest-priority unfinished feature: `feat-022` — the split-screen
+  Farm view (`feat-020` and `feat-021`, the two performance fixes, are
+  both `passing` as of Session 017).
 - Blockers: none currently known.
-- Recommended Next Step: Work `feat-021`, then `feat-022` through
+- Recommended Next Step: Work `feat-022`, then `feat-023` through
   `feat-029` in priority order.
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
@@ -653,6 +653,57 @@
   Well outside a demo session's timespan, not worth the added
   complexity.
 - Next best step: `feat-021` — shared frontend data-fetch cache/hook.
+
+## Session 017 — feat-021
+
+- Date: 2026-07-14
+- Goal: Implement `feat-021` — the shared frontend data-fetch cache/hook
+  (the user's original "cache or hooks" ask), complementary to
+  `feat-020`'s backend fix.
+- Implemented `frontend/lib/dataCache.ts` (module-level cache keyed by
+  string: value+timestamp, in-flight de-dup, 20s TTL, `invalidate(key)`
+  that clears and immediately re-fetches in the background using the
+  last-registered fetcher) and `frontend/lib/useApiData.ts` (a hook on
+  top of it via React 18+'s built-in `useSyncExternalStore` — no new
+  dependency, per the earlier `AskUserQuestion` answer). Wired
+  `dashboard/page.tsx` and `CopilotPanel.tsx` to the same
+  `'dashboard-summary'` cache key, and `assets/[id]/page.tsx`'s
+  approve/reject handler to call `invalidate('dashboard-summary')`.
+- Hit and fixed two React 19 lint errors on the first pass (ref written
+  during render; `setState` called synchronously at the top of an
+  effect, ahead of the async call) — both are stricter-than-expected
+  hook rules `frontend/AGENTS.md` already warns this Next.js/React
+  version has. Fixed by moving the ref write into its own
+  no-deps `useEffect` and moving all `setState` calls inside the
+  `load()` promise chain.
+- Verified (runtime, against the live account):
+  - `npm run build` / `npm run lint` clean.
+  - Playwright: loading `/dashboard` (which mounts both the Dashboard
+    page and the globally-mounted `CopilotPanel`, both requesting the
+    same cache key) fired exactly 1 `GET /dashboard/summary` call, not
+    2. Opening the Copilot panel afterward fired 0 additional calls
+    (cache hit). Recorded "Tasks due today" = 5, approved one real
+    pending recommendation from the `/assets/FP-001` page, navigated
+    back to `/dashboard`, and "Tasks due today" correctly read 4 —
+    proving `invalidate()` on one screen makes a different,
+    independently-mounted screen show fresh data automatically. Zero
+    console errors.
+  - Caught and resolved a measurement false-alarm mid-verification: an
+    unscoped Playwright locator counted 10 "View asset" links with the
+    panel open against an API count of 5, which looked like a
+    duplicate-render bug. Rescoping the locator to just the panel's own
+    container showed exactly 5 — the extra 5 were the Dashboard page's
+    own "Daily recommendations" section still mounted underneath the
+    modal overlay, not a real bug.
+- Result: `feat-021` moved to `passing` in `feature_list.json` with the
+  above evidence recorded.
+- Files updated: `frontend/lib/dataCache.ts` (new),
+  `frontend/lib/useApiData.ts` (new), `frontend/app/dashboard/page.tsx`,
+  `frontend/components/CopilotPanel.tsx`,
+  `frontend/app/assets/[id]/page.tsx`, `feature_list.json`,
+  `progress.md`.
+- Next best step: `feat-022` — the split-screen Farm view (map left,
+  dashboard/asset-detail panel right).
 
 ## Legacy: rice-cooperative build (superseded 2026-07-14)
 

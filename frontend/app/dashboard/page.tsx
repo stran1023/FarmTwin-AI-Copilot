@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getDashboardSummary, type DashboardSummary } from "@/lib/api";
+import { getDashboardSummary } from "@/lib/api";
+import { useApiData } from "@/lib/useApiData";
 import { Card } from "@/components/Card";
 import { RiskBadge } from "@/components/RiskBadge";
 import { RecommendationCard } from "@/components/RecommendationCard";
@@ -14,14 +14,7 @@ function healthColor(score: number) {
 }
 
 export default function DashboardPage() {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getDashboardSummary()
-      .then(setSummary)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, []);
+  const { data: summary, error } = useApiData("dashboard-summary", getDashboardSummary);
 
   return (
     <div className="flex flex-col gap-4">

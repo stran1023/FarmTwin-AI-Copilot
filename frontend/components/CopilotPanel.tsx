@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { askCopilot, getDashboardSummary, type Recommendation } from "@/lib/api";
+import { useState } from "react";
+import { askCopilot, getDashboardSummary, type DashboardSummary } from "@/lib/api";
+import { useApiData } from "@/lib/useApiData";
 import { RecommendationCard } from "@/components/RecommendationCard";
 
 interface Exchange {
@@ -19,26 +20,15 @@ const EXAMPLE_QUESTIONS = [
 
 export function CopilotPanel() {
   const [open, setOpen] = useState(false);
-  const [recommendations, setRecommendations] = useState<Recommendation[] | null>(null);
-  const [recsError, setRecsError] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [asking, setAsking] = useState(false);
 
-  const loadRecommendations = useCallback(() => {
-    return getDashboardSummary()
-      .then((s) => {
-        setRecommendations(s.top_recommendations);
-        setRecsError(null);
-      })
-      .catch((err) => setRecsError(err instanceof Error ? err.message : String(err)));
-  }, []);
-
-  useEffect(() => {
-    if (open && recommendations === null) {
-      loadRecommendations();
-    }
-  }, [open, recommendations, loadRecommendations]);
+  const { data: summary, error: recsError } = useApiData<DashboardSummary>(
+    "dashboard-summary",
+    getDashboardSummary,
+  );
+  const recommendations = summary?.top_recommendations ?? null;
 
   async function handleAsk(raw: string) {
     const trimmed = raw.trim();

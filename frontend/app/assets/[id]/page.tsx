@@ -13,6 +13,7 @@ import {
   type AssetReading,
   type Recommendation,
 } from "@/lib/api";
+import { invalidate } from "@/lib/dataCache";
 import { Card } from "@/components/Card";
 import { RiskBadge } from "@/components/RiskBadge";
 import { RecommendationCard } from "@/components/RecommendationCard";
@@ -104,6 +105,7 @@ export default function AssetDetailPage() {
       } else {
         await rejectRecommendation(recommendationId);
       }
+      invalidate("dashboard-summary");
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
