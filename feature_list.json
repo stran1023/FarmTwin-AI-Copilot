@@ -349,13 +349,18 @@
       "description": "Replace the current plain diamond-grid CSS isometric ground with a richer, warmer cartoon farm terrain: textured grass (CSS gradient/pattern, not a flat color), simple dirt paths connecting the 4 asset plots, a soft sky-gradient background, and light decorative landmarks (a fence border, a small farmhouse/silo icon near the plot origin) so the map reads as a real small farm rather than an abstract grid, per the user's Stardew-Valley-adjacent cute-style direction. Pure CSS/SVG, no new dependency, no change to the existing 2:1 isometric coordinate transform from feat-015.",
       "user_visible_behavior": "The map background looks like an illustrated farm (grass, paths, sky, small landmarks) instead of a flat gray/white diamond grid.",
       "dependencies": ["feat-022"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "npm run build && npm run lint succeed in frontend/",
         "Playwright screenshot review confirming the new terrain renders under all 4 asset markers without regressions to marker positioning, hover, or click-through"
       ],
-      "evidence": [],
-      "notes": "Foundational visual pass that feat-024 through feat-027's per-asset-type graphics build on top of. User confirmed: CSS/SVG only (no animation library, no canvas/game engine), cute/cartoon style (not photorealistic)."
+      "evidence": [
+        "2026-07-14: Added frontend/components/FarmTerrain.tsx: textured grass (a 3-shade deterministic hash per tile, replacing the old flat single-color diamond grid), dirt paths (a simple diagonal-then-straight line per asset from a fixed central 'farmhouse' grid position (5,5) -- chosen because it doesn't collide with any of the 4 seeded asset positions -- to that asset's real grid_x/grid_y, so paths are asset-driven, not hardcoded), a farmhouse emoji landmark at the hub, 4 corner decorative trees, and a soft sun-glow blur in the sky corner. Exported the shared TILE_W/TILE_H/GRID_SIZE/isoPosition constants so DigitalTwinMap.tsx no longer duplicates them.",
+        "2026-07-14: frontend/components/DigitalTwinMap.tsx: replaced its inline flat-tile rendering with <FarmTerrain assetPositions={...}> underneath the existing asset markers; warmed the container's sky gradient (from-sky-200 via-sky-50 to-emerald-50).",
+        "2026-07-14: npm run build and npm run lint clean.",
+        "2026-07-14: Playwright screenshot against live data confirmed: textured grass renders correctly, dirt paths visibly connect the farmhouse to all 4 real asset positions (FP-001/CC-001/FO-001/RF-001), farmhouse and 4 corner trees render at the correct fixed positions, all 4 asset markers still render at their correct real grid positions on top of the new terrain with correct ring colors (FP-001 critical/red visible), zero console/page errors. Marker click-through and hover (feat-015/feat-022 behavior) unaffected -- terrain elements are non-interactive (pointer-events-none) decorative layers underneath the marker buttons."
+      ],
+      "notes": "Foundational visual pass that feat-024 through feat-027's per-asset-type graphics build on top of. User confirmed: CSS/SVG only (no animation library, no canvas/game engine), cute/cartoon style (not photorealistic). Path/farmhouse/tree positions and grass shading are computed, not hardcoded per-asset, so they stay correct if seeded asset positions ever change."
     },
     {
       "id": "feat-024",

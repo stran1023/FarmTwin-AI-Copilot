@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import type { AssetOverview } from "@/lib/api";
-
-const TILE_W = 64;
-const TILE_H = 32;
-const GRID_SIZE = 11; // asset grid_x/grid_y are seeded in the 0-10 range
+import { FarmTerrain, GRID_SIZE, TILE_H, TILE_W, isoPosition } from "@/components/FarmTerrain";
 
 const ASSET_ICON: Record<string, string> = {
   fish_pond: "🐟",
@@ -20,13 +17,6 @@ const STATUS_RING: Record<string, string> = {
   critical: "ring-red-500 shadow-red-500/60 animate-pulse",
 };
 
-function isoPosition(gx: number, gy: number) {
-  return {
-    left: (gx - gy) * (TILE_W / 2),
-    top: (gx + gy) * (TILE_H / 2),
-  };
-}
-
 export function DigitalTwinMap({
   assets,
   onSelectAsset,
@@ -39,36 +29,13 @@ export function DigitalTwinMap({
   const [hovered, setHovered] = useState<string | null>(null);
   const centerOffset = ((GRID_SIZE - 1) * TILE_W) / 2;
 
-  const tiles: { gx: number; gy: number }[] = [];
-  for (let gx = 0; gx < GRID_SIZE; gx++) {
-    for (let gy = 0; gy < GRID_SIZE; gy++) {
-      tiles.push({ gx, gy });
-    }
-  }
-
   return (
     <div
-      className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-gradient-to-b from-sky-50 to-emerald-50 dark:border-zinc-800 dark:from-zinc-900 dark:to-zinc-950"
+      className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-gradient-to-b from-sky-200 via-sky-50 to-emerald-50 dark:border-zinc-800 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-950"
       style={{ height: (GRID_SIZE - 1) * TILE_H + 160 }}
     >
       <div className="absolute" style={{ left: centerOffset, top: 60 }}>
-        {tiles.map(({ gx, gy }) => {
-          const { left, top } = isoPosition(gx, gy);
-          return (
-            <div
-              key={`${gx}-${gy}`}
-              className="absolute border border-emerald-900/5 bg-emerald-600/10 dark:bg-emerald-400/5"
-              style={{
-                left,
-                top,
-                width: TILE_W,
-                height: TILE_H,
-                clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
-                zIndex: gx + gy,
-              }}
-            />
-          );
-        })}
+        <FarmTerrain assetPositions={assets.map((a) => ({ gx: a.grid_x, gy: a.grid_y }))} />
 
         {assets.map((asset) => {
           const { left, top } = isoPosition(asset.grid_x, asset.grid_y);

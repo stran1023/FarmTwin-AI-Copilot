@@ -19,12 +19,14 @@
   (syntax-only). A real venv exists at `backend/venv` with
   `requirements.txt` installed, so runtime verification is also possible.
   Frontend verification: `cd frontend && npm run build && npm run lint`.
-- Highest-priority unfinished feature: `feat-023` — cartoon terrain
-  redesign, the first of the visual-overhaul features (`feat-020`
-  through `feat-022` are all `passing` as of Session 018).
+- Highest-priority unfinished feature: `feat-024` — fish pond visual
+  (`feat-020` through `feat-023` are all `passing` as of Session 019,
+  which is in progress working through the visual-overhaul batch
+  `feat-023`-`feat-029` autonomously per the user's "continue to
+  automate" request).
 - Blockers: none currently known.
-- Recommended Next Step: Work `feat-023`, then `feat-024` through
-  `feat-029` in priority order.
+- Recommended Next Step: Continue `feat-024` through `feat-029` in
+  priority order.
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
 
@@ -775,6 +777,34 @@
   over the complexity of manual history-stack management.
 - Next best step: `feat-023` — the cartoon terrain redesign, first of
   the visual-overhaul features.
+
+## Session 019 — visual overhaul batch (feat-023 through feat-029)
+
+- Date: 2026-07-14
+- Goal: user said "continue to automate from feat-023 to feat-029" --
+  working through the whole visual-overhaul batch in one session,
+  committing each feature separately with real verification (build,
+  lint, live Playwright screenshot against real data) per this repo's
+  standard rigor, but with more compact evidence entries than earlier
+  sessions to keep pace across 7 features.
+- Kept one backend + one frontend dev server running for the whole
+  batch (restarting only if something crashed) rather than
+  starting/stopping per feature, to move faster across 7 similar
+  verification passes.
+
+### feat-023 — cartoon terrain redesign
+
+- Added `frontend/components/FarmTerrain.tsx`: 3-shade textured grass
+  (deterministic per-tile hash, not flat color), dirt paths computed
+  from a fixed central farmhouse position (5,5) out to each real
+  asset's grid_x/grid_y (asset-driven, not hardcoded), a farmhouse
+  emoji landmark, 4 corner trees, a soft sun-glow. Exported the shared
+  tile constants so `DigitalTwinMap.tsx` stopped duplicating them.
+- `npm run build`/`npm run lint` clean. Playwright screenshot against
+  live data confirmed correct rendering, real asset positions
+  unaffected, zero console errors, marker click-through/hover
+  unaffected (terrain layers are `pointer-events-none`).
+- Result: `passing`.
 
 ## Legacy: rice-cooperative build (superseded 2026-07-14)
 
