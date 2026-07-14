@@ -475,13 +475,18 @@
       "description": "Per docs/ui-build-plan.md's original note ('even a subtle idle animation... reinforces this is not a dashboard'), replace the current static colored-ring marker overlay with more expressive per-status animation: a gentle pulsing glow on the single highest-priority/most-at-risk asset (drawing the eye immediately on load), a small bouncing alert-bubble icon over any critical asset, and a subtle sparkle/checkmark micro-animation on healthy assets. Layers on top of feat-024 through feat-027's per-type graphics rather than replacing them.",
       "user_visible_behavior": "The single most urgent asset is visually unmistakable within a second of loading the page, without reading any text.",
       "dependencies": ["feat-024", "feat-025", "feat-026", "feat-027"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "npm run build && npm run lint succeed in frontend/",
         "Playwright screenshot with FP-001 in its real critical state confirming the alert/pulse treatment is visually present and clearly distinguishable from the other 3 healthy assets"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "2026-07-15: Added frontend/components/StatusIndicators.tsx: topPriorityAssetId() picks the single worst-status asset farm-wide (severity-ranked, tie-broken by lowest health_score, null if everything's healthy) so only one asset ever gets the spotlight -- not every elevated asset competing for attention. StatusIndicators renders a soft pulsing halo (spotlight-pulse keyframe) behind that one asset, a bouncing red alert badge ('!' badge-bounce keyframe) on every critical asset, and a gentle fading sparkle (sparkle-fade keyframe) on every healthy asset -- all 3 keyframes added to globals.css. Layers on top of feat-024-027's per-type marker graphics via a new StatusIndicators + AssetMarkerVisual pairing inside each marker button, not a replacement of them.",
+        "2026-07-15: Wired into DigitalTwinMap.tsx: topPriorityAssetId(assets) computed once via useMemo, passed per-marker as an isTopPriority boolean.",
+        "2026-07-15: npm run build and npm run lint clean.",
+        "2026-07-15: Verified live against real data (FP-001 critical, the other 3 healthy) with a Playwright screenshot (visually confirmed the red alert badge on FP-001 and sparkles on the other 3) plus a precise DOM-count check to remove any ambiguity from the animation being mid-cycle in a static screenshot: exactly 1 spotlight-pulse halo element, exactly 1 badge-bounce alert badge (both on FP-001, the sole critical/top-priority asset), and exactly 3 sparkle-fade elements (one per healthy asset) -- matching the intended one-spotlight-only design exactly."
+      ],
+      "notes": "Last feature in the visual-overhaul batch (feat-023 through feat-029), all now passing. Closes the loop on ui-build-plan.md's original 'even a subtle idle animation... reinforces this is not a dashboard' note from the initial FarmTwin design pass."
     }
   ]
 }

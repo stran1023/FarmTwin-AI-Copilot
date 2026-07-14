@@ -87,6 +87,40 @@ body {
   }
 }
 
+@keyframes badge-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes sparkle-fade {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes spotlight-pulse {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.05;
+  }
+}
+
 @keyframes cloud-drift-a {
   from {
     left: -25%;

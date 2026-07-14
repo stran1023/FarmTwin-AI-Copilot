@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AssetOverview, WeatherReading } from "@/lib/api";
 import { FarmTerrain, GRID_SIZE, TILE_H, TILE_W, isoPosition } from "@/components/FarmTerrain";
 import { FishPondMarker } from "@/components/FishPondMarker";
@@ -8,6 +8,7 @@ import { ChickenCoopMarker } from "@/components/ChickenCoopMarker";
 import { RiceFieldMarker } from "@/components/RiceFieldMarker";
 import { FruitOrchardMarker } from "@/components/FruitOrchardMarker";
 import { WeatherAmbience } from "@/components/WeatherAmbience";
+import { StatusIndicators, topPriorityAssetId } from "@/components/StatusIndicators";
 
 const ASSET_ICON: Record<string, string> = {
   fish_pond: "🐟",
@@ -62,6 +63,7 @@ export function DigitalTwinMap({
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const centerOffset = ((GRID_SIZE - 1) * TILE_W) / 2;
+  const topPriorityId = useMemo(() => topPriorityAssetId(assets), [assets]);
 
   return (
     <div
@@ -98,6 +100,7 @@ export function DigitalTwinMap({
               onFocus={() => setHovered(asset.asset_id)}
               onBlur={() => setHovered(null)}
             >
+              <StatusIndicators asset={asset} isTopPriority={topPriorityId === asset.asset_id} />
               <AssetMarkerVisual asset={asset} ring={ring} isSelected={isSelected} />
 
               {isHovered && (

@@ -19,14 +19,16 @@
   (syntax-only). A real venv exists at `backend/venv` with
   `requirements.txt` installed, so runtime verification is also possible.
   Frontend verification: `cd frontend && npm run build && npm run lint`.
-- Highest-priority unfinished feature: `feat-024` — fish pond visual
-  (`feat-020` through `feat-023` are all `passing` as of Session 019,
-  which is in progress working through the visual-overhaul batch
-  `feat-023`-`feat-029` autonomously per the user's "continue to
-  automate" request).
+- Highest-priority unfinished feature: none. **All 22 features
+  (`feat-001` legacy through `feat-029`, i.e. all of `feature_list.json`)
+  are `passing` as of Session 019** — both the FarmTwin pivot and the
+  full performance/UX/visual-overhaul roadmap are complete.
 - Blockers: none currently known.
-- Recommended Next Step: Continue `feat-024` through `feat-029` in
-  priority order.
+- Recommended Next Step: No unfinished feature remains. If continuing,
+  look to `docs/FarmTwin-AI-Copilot.md`'s "Future Features" section, a
+  fresh full end-to-end demo walkthrough across the split view in one
+  sitting, or hardening (e.g. `feat-012`'s documented per-asset
+  transaction-rollback limitation).
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
 
@@ -805,6 +807,100 @@
   unaffected, zero console errors, marker click-through/hover
   unaffected (terrain layers are `pointer-events-none`).
 - Result: `passing`.
+
+### feat-024 — fish pond marker
+
+- `frontend/components/FishPondMarker.tsx`: gradient water oval, dock
+  plank, shimmer + 2 independent fish-swim CSS keyframes (globals.css),
+  water tint/ring shifting per real status -- murky/still when critical
+  (fish hidden), bright/clear with visible fish when healthy.
+- Verified live: FP-001 (real critical DO state) renders murky with a
+  pulsing red ring, no fish. Healthy branch verified by code inspection
+  only -- FP-001 is the farm's only fish_pond and is intentionally kept
+  critical for the demo narrative, so no live healthy fish-pond data
+  exists to screenshot against.
+- Result: `passing`.
+
+### feat-025 — chicken coop marker
+
+- `frontend/components/ChickenCoopMarker.tsx`: red-roofed coop over a
+  fenced yard, 2 chickens with independent bob/peck keyframes, a
+  decorative egg (not wired to the exact egg_count reading -- that
+  field isn't in the map's AssetOverview data model, and fetching it
+  per-asset just for map decoration would work against feat-021's
+  performance goals for a purely cosmetic touch).
+- Verified live (full screenshot + cropped closeup): CC-001 renders
+  correctly with a healthy emerald ring.
+- Result: `passing`.
+
+### feat-026 — rice paddy marker with real growth-stage visuals
+
+- Unlike feat-025's egg_count, growth_stage/irrigation_status are the
+  actual point of this feature, so extended `GET /assets`
+  (`backend/app/main.py`) with a second CTE joining each asset's latest
+  reading alongside the existing latest-risk CTE -- still one query, no
+  N+1 pattern. Added the 3 new fields to `AssetOverview` (backend
+  Pydantic model + frontend TS interface): growth_stage,
+  irrigation_status, harvest_readiness_pct.
+- `frontend/components/RiceFieldMarker.tsx`: 6 swaying CSS blades whose
+  height/color come from a STAGE_STYLE table keyed by the real
+  growth_stage; a water-shimmer overlay when irrigation_status ===
+  'active'.
+- Verified rigorously: drove 2 real `/workflow/run` ticks, observed
+  RF-001 advance growth_stage 'vegetative' -> 'reproductive', confirmed
+  via the asset detail panel, then inspected the marker's actual
+  computed DOM styles and confirmed all 6 blades were exactly
+  height:18px / bg-emerald-600 -- precisely matching
+  STAGE_STYLE.reproductive, not just a plausible-looking screenshot.
+- Result: `passing`.
+
+### feat-027 — fruit orchard marker with real harvest-readiness visuals
+
+- `frontend/components/FruitOrchardMarker.tsx`: 2 swaying round-canopy
+  trees (tree-sway keyframe) with fruit-dot count/color scaling
+  directly from the real harvest_readiness_pct (already available from
+  feat-026's backend extension, no further backend change needed).
+- All 4 asset types now have dedicated markers; the original generic
+  emoji-in-ring fallback is unreachable for real data but intentionally
+  kept for any future new asset_type.
+- Verified live: FO-001 (real ~93% harvest readiness) rendered 5 fruit
+  dots in deep-orange 'ripe' color, matching fruitCount(93)=5 and
+  fruitColor(93)='orange-600' exactly.
+- Result: `passing`.
+
+### feat-028 — weather ambience layer
+
+- `frontend/components/WeatherAmbience.tsx`: a pointer-events-none
+  overlay -- sun-tint opacity scaled by real temp_c, 2 drifting clouds,
+  animated rain shown only when rainfall_mm > 0.5. Wired via
+  `SplitFarmView.tsx` reusing the same `'dashboard-summary'` cache key
+  DashboardPanel/CopilotPanel already use (feat-021) -- zero extra
+  network calls.
+- Verified live: real weather was rainfall_mm=5.3, confirmed animated
+  raindrops rendered; clicked through all 4 markers afterward to
+  confirm the overlay doesn't block interaction.
+- Result: `passing`.
+
+### feat-029 — expressive status indicators
+
+- `frontend/components/StatusIndicators.tsx`: `topPriorityAssetId()`
+  picks the single worst-status asset farm-wide (severity-ranked,
+  health-score tie-break) for a pulsing spotlight halo; every critical
+  asset gets a bouncing alert badge; every healthy asset gets a gentle
+  sparkle. Layers on top of feat-024-027's graphics, doesn't replace
+  them.
+- Verified live with a precise DOM-count check (not just a screenshot,
+  since the animation's mid-cycle state isn't reliably visible in a
+  static capture): exactly 1 spotlight halo + 1 alert badge (both on
+  FP-001, the sole critical asset) and exactly 3 sparkles (one per
+  healthy asset).
+- Result: `passing`. **All 22 features in feature_list.json are now
+  `passing`** -- the visual-overhaul batch (feat-023-029) and the
+  earlier performance/UX batch (feat-020-022) are both complete,
+  closing out every improvement the user requested this session.
+- Next best step: none required. Future direction would come from
+  `docs/FarmTwin-AI-Copilot.md`'s "Future Features" section or general
+  hardening.
 
 ## Legacy: rice-cooperative build (superseded 2026-07-14)
 
