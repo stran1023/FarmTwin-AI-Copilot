@@ -1,17 +1,11 @@
 "use client";
 
-// NOTE: this is a minimal compat patch (field renames only) to keep the
-// build green after feat-013 rebuilt /briefing/today against
-// RECOMMENDATIONS. The real Screen 5 rebuild (feat-019) will give this a
-// proper design pass -- this file is intentionally left otherwise
-// unchanged from the prior WORK_ORDERS-based version.
-
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getBriefingToday, type BriefingToday, type Recommendation } from "@/lib/api";
 import { Card } from "@/components/Card";
+import { RecommendationCard } from "@/components/RecommendationCard";
 
-function RecommendationRow({
+function DecisionMeta({
   recommendation,
   tone,
 }: {
@@ -19,30 +13,37 @@ function RecommendationRow({
   tone: "approved" | "rejected";
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-zinc-100 py-2 last:border-0 dark:border-zinc-800">
-      <div>
-        <Link
-          href={`/assets/${recommendation.asset_id}`}
-          className="font-medium text-zinc-900 hover:underline dark:text-zinc-100"
-        >
-          Asset {recommendation.asset_id}
-        </Link>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">{recommendation.recommendation}</p>
-      </div>
-      <div className="text-right text-sm">
-        <span
-          className={
-            tone === "approved"
-              ? "text-emerald-700 dark:text-emerald-300"
-              : "text-red-700 dark:text-red-300"
-          }
-        >
-          {tone === "approved" ? "Approved" : "Rejected"}
-        </span>
-        {recommendation.approved_by && (
-          <p className="text-zinc-500 dark:text-zinc-400">by {recommendation.approved_by}</p>
-        )}
-      </div>
+    <p
+      className={
+        tone === "approved"
+          ? "text-xs font-medium text-emerald-700 dark:text-emerald-400"
+          : "text-xs font-medium text-red-700 dark:text-red-400"
+      }
+    >
+      {tone === "approved" ? "Approved" : "Rejected"}
+      {recommendation.approved_by && ` by ${recommendation.approved_by}`}
+      {recommendation.approved_at && ` at ${new Date(recommendation.approved_at).toLocaleTimeString()}`}
+    </p>
+  );
+}
+
+function RecommendationList({
+  recommendations,
+  tone,
+}: {
+  recommendations: Recommendation[];
+  tone: "approved" | "rejected";
+}) {
+  if (recommendations.length === 0) {
+    return <p className="text-sm text-zinc-500">None yet today.</p>;
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {recommendations.map((rec) => (
+        <RecommendationCard key={rec.recommendation_id} recommendation={rec}>
+          <DecisionMeta recommendation={rec} tone={tone} />
+        </RecommendationCard>
+      ))}
     </div>
   );
 }
@@ -86,26 +87,14 @@ export default function BriefingPage() {
             <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
               Approved ({briefing.approved_recommendations.length})
             </p>
-            {briefing.approved_recommendations.length === 0 ? (
-              <p className="text-sm text-zinc-500">None yet today.</p>
-            ) : (
-              briefing.approved_recommendations.map((rec) => (
-                <RecommendationRow key={rec.recommendation_id} recommendation={rec} tone="approved" />
-              ))
-            )}
+            <RecommendationList recommendations={briefing.approved_recommendations} tone="approved" />
           </Card>
 
           <Card>
             <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
               Rejected ({briefing.rejected_recommendations.length})
             </p>
-            {briefing.rejected_recommendations.length === 0 ? (
-              <p className="text-sm text-zinc-500">None yet today.</p>
-            ) : (
-              briefing.rejected_recommendations.map((rec) => (
-                <RecommendationRow key={rec.recommendation_id} recommendation={rec} tone="rejected" />
-              ))
-            )}
+            <RecommendationList recommendations={briefing.rejected_recommendations} tone="rejected" />
           </Card>
         </>
       )}

@@ -19,12 +19,15 @@
   (syntax-only). A real venv exists at `backend/venv` with
   `requirements.txt` installed, so runtime verification is also possible.
   Frontend verification: `cd frontend && npm run build && npm run lint`.
-- Highest-priority unfinished feature: `feat-019` — the daily briefing
-  screen rebuild (`feat-008` through `feat-018` are all `passing` as of
-  Session 013; this is the last unfinished feature in `feature_list.json`).
+- Highest-priority unfinished feature: none. **All 12 roadmap features
+  (`feat-008` through `feat-019`) are `passing` as of Session 014** — the
+  FarmTwin pivot is feature-complete per `feature_list.json`.
 - Blockers: none currently known.
-- Recommended Next Step: Work `feat-019` (daily briefing screen rebuild)
-  to close out the roadmap.
+- Recommended Next Step: No unfinished feature remains. If continuing,
+  look to `docs/FarmTwin-AI-Copilot.md`'s "Future Features" section, a
+  fresh end-to-end demo walkthrough across all 5 screens in one sitting,
+  or hardening (e.g. the per-asset transaction-rollback limitation noted
+  under `feat-012`).
 
 ## Session 011
 
@@ -491,6 +494,55 @@
 - Next best step: `feat-019` — rebuild `frontend/app/briefing/page.tsx`
   against the real `GET /briefing/today` (it currently has only the
   minimal feat-015 compat patch, not a real redesign).
+
+## Session 014
+
+- Date: 2026-07-14
+- Goal: Implement `feat-019` — rebuild the daily briefing screen (Screen
+  5), the last unfinished feature in `feature_list.json`.
+- Found the data-source swap (`GET /briefing/today` against
+  `RECOMMENDATIONS`) had already been done as a minimal compat patch back
+  in `feat-015`. The remaining work was the deferred "proper design
+  pass": replaced the bespoke compact `RecommendationRow` with the shared
+  `RecommendationCard` component (full 6-field detail, consistent with
+  Screens 2/3/4) plus a small approved/rejected-by-whom-and-when line via
+  its existing `children` slot. Removed the stale placeholder comment.
+- Verified (runtime, against the live account):
+  - `npm run build` / `npm run lint` clean.
+  - Approved one real pending FP-001 recommendation and rejected another
+    via live API calls, then a Playwright walkthrough of `/briefing`
+    confirmed correct real counts ("Approved (12)" / "Rejected (11)"),
+    both just-actioned recommendations visible in the right section with
+    correct decision metadata, 23 total real recommendation cards, a real
+    Cortex-generated summary, and zero console errors.
+  - **False-alarm investigation (documented for the record since it took
+    real verification effort):** mid-session, curl/JSON terminal output
+    appeared to show double-UTF-8-encoded mojibake (e.g. `â€”` instead of
+    an em-dash) in some recommendation text, which looked like a real
+    backend/Cortex-Agent-client encoding bug. Root-caused via three
+    independent checks that bypassed the terminal-display layer (a
+    direct Snowflake execute()/run_query() round-trip written to a file,
+    a fresh isolated `ask_agent()` call written to a file, and a final
+    Playwright DOM-text extraction of the live rendered briefing page) --
+    all three showed correctly encoded characters (real em-dashes,
+    degree signs, arrows) with zero corruption. The apparent corruption
+    was purely an artifact of how curl's UTF-8 output renders back
+    through this Windows terminal/Bash-tool pipeline in this environment,
+    not a real defect anywhere in the app or stored data. One demo
+    recommendation row was deleted mid-investigation based on the
+    since-disproven theory (regenerable test content, not seed data --
+    no real loss).
+- Result: `feat-019` moved to `passing` in `feature_list.json` with the
+  above evidence recorded. **All 12 roadmap features (`feat-008` through
+  `feat-019`) are now `passing`** -- the FarmTwin pivot is
+  feature-complete.
+- Files updated: `frontend/app/briefing/page.tsx`, `feature_list.json`,
+  `progress.md`.
+- Next best step: no unfinished feature remains in `feature_list.json`.
+  If continuing: `docs/FarmTwin-AI-Copilot.md`'s "Future Features"
+  section, a fresh full end-to-end demo walkthrough across all 5 screens
+  in one sitting, or hardening the per-asset transaction-rollback
+  limitation noted under `feat-012`.
 
 ## Legacy: rice-cooperative build (superseded 2026-07-14)
 
