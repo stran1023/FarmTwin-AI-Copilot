@@ -1,274 +1,151 @@
-"use client";
+import { GRID, TILE_H, TILE_W, WORLD_H, WORLD_W, isoToXY, tilePoints } from "@/lib/iso"
 
-/**
- * The ground layer of the digital twin map: a textured grass diamond
- * grid, dirt paths from a central farmhouse landmark out to each real
- * asset position, and light decorative scenery (farmhouse, corner
- * trees, a soft sun glow). Pure CSS -- no new dependency, no canvas --
- * per the cute/cartoon-farm-sim visual direction. Asset markers
- * themselves are still rendered by DigitalTwinMap.tsx, which composes
- * this component underneath them.
- */
+const FARMHOUSE = { gx: 5, gy: 5 }
 
-export const TILE_W = 64;
-export const TILE_H = 32;
-export const GRID_SIZE = 11; // asset grid_x/grid_y are seeded in the 0-10 range
-
-export const FARMHOUSE_POS = { gx: 5, gy: 5 };
-
-const GRASS_SHADES = [
-  "bg-emerald-500/15 dark:bg-emerald-400/10",
-  "bg-emerald-600/20 dark:bg-emerald-400/15",
-  "bg-lime-500/15 dark:bg-lime-400/10",
-];
-
-const PATH_SHADE = "bg-amber-700/25 dark:bg-amber-600/20";
-
-export function isoPosition(gx: number, gy: number) {
-  return {
-    left: (gx - gy) * (TILE_W / 2),
-    top: (gx + gy) * (TILE_H / 2),
-  };
+export interface TerrainTile {
+  gx: number
+  gy: number
 }
 
-function tileKey(gx: number, gy: number) {
-  return `${gx}-${gy}`;
-}
-
-function grassShade(gx: number, gy: number): string {
-  return GRASS_SHADES[(gx * 7 + gy * 13) % GRASS_SHADES.length];
-}
-
-/** Deterministic dirt path from `from` to `to`: diagonal steps first,
- * then straight -- a simple, readable line through the iso grid, not a
- * real pathfinder (there's nothing to path around). */
-function pathBetween(from: { gx: number; gy: number }, to: { gx: number; gy: number }): string[] {
-  const tiles: string[] = [];
-  let gx = from.gx;
-  let gy = from.gy;
-  while (gx !== to.gx && gy !== to.gy) {
-    gx += Math.sign(to.gx - gx);
-    gy += Math.sign(to.gy - gy);
-    tiles.push(tileKey(gx, gy));
-  }
-  while (gx !== to.gx) {
-    gx += Math.sign(to.gx - gx);
-    tiles.push(tileKey(gx, gy));
-  }
-  while (gy !== to.gy) {
-    gy += Math.sign(to.gy - gy);
-    tiles.push(tileKey(gx, gy));
-  }
-  return tiles;
-}
-
-const CORNERS = [
-  { gx: 0, gy: 0 },
-  { gx: 0, gy: GRID_SIZE - 1 },
-  { gx: GRID_SIZE - 1, gy: 0 },
-  { gx: GRID_SIZE - 1, gy: GRID_SIZE - 1 },
-];
-
-/** Purely decorative set-dressing (feat-032) -- fixed candidate tiles,
- * filtered against real asset/farmhouse positions at render time so
- * nothing ever sits on top of an interactive marker. None of this
- * backs real data; it only makes the terrain read as populated. */
-const EXTRA_TREES = [
-  { gx: 2, gy: 1 },
-  { gx: 8, gy: 1 },
-  { gx: 1, gy: 8 },
-  { gx: 9, gy: 8 },
-  { gx: 3, gy: 9 },
-  { gx: 7, gy: 2 },
-];
-
+// Decorative scenery — never blocks a marker (pointer-events-none on the layer).
+const TREES = [
+  { gx: 0, gy: 6 },
+  { gx: 1, gy: 9 },
+  { gx: 10, gy: 4 },
+  { gx: 6, gy: 0 },
+  { gx: 9, gy: 10 },
+]
 const BUSHES = [
   { gx: 4, gy: 1 },
-  { gx: 6, gy: 9 },
-  { gx: 1, gy: 4 },
-  { gx: 9, gy: 6 },
-];
+  { gx: 0, gy: 2 },
+  { gx: 10, gy: 7 },
+  { gx: 5, gy: 10 },
+]
 
-const WELL_POS = { gx: 5, gy: 2 };
-const VEHICLE_POS = { gx: 3, gy: 6 };
-const PERSON_POSITIONS = [
-  { gx: 6, gy: 4 },
-  { gx: 4, gy: 7 },
-];
+function grassShade(gx: number, gy: number) {
+  const v = (gx * 2 + gy * 3) % 3
+  if (v === 0) return "var(--grass-light)"
+  if (v === 1) return "var(--grass-mid)"
+  return "var(--grass-dark)"
+}
 
-export function FarmTerrain({ assetPositions }: { assetPositions: { gx: number; gy: number }[] }) {
-  const pathTiles = new Set<string>();
-  for (const pos of assetPositions) {
-    for (const t of pathBetween(FARMHOUSE_POS, pos)) pathTiles.add(t);
-  }
-
-  const tiles: { gx: number; gy: number }[] = [];
-  for (let gx = 0; gx < GRID_SIZE; gx++) {
-    for (let gy = 0; gy < GRID_SIZE; gy++) {
-      tiles.push({ gx, gy });
+export function FarmTerrain({ assetTiles = [] }: { assetTiles?: TerrainTile[] }) {
+  const tiles = []
+  for (let gx = 0; gx < GRID; gx++) {
+    for (let gy = 0; gy < GRID; gy++) {
+      tiles.push({ gx, gy })
     }
   }
 
-  const farmhousePos = isoPosition(FARMHOUSE_POS.gx, FARMHOUSE_POS.gy);
-
-  // Never place decorative scenery on a tile a real asset or the
-  // farmhouse already occupies.
-  const occupied = new Set<string>([
-    tileKey(FARMHOUSE_POS.gx, FARMHOUSE_POS.gy),
-    ...assetPositions.map((p) => tileKey(p.gx, p.gy)),
-  ]);
-  const decorativeTrees = EXTRA_TREES.filter((p) => !occupied.has(tileKey(p.gx, p.gy)));
-  const decorativeBushes = BUSHES.filter((p) => !occupied.has(tileKey(p.gx, p.gy)));
-  const showWell = !occupied.has(tileKey(WELL_POS.gx, WELL_POS.gy));
-  const showVehicle = !occupied.has(tileKey(VEHICLE_POS.gx, VEHICLE_POS.gy));
-  const decorativePeople = PERSON_POSITIONS.filter((p) => !occupied.has(tileKey(p.gx, p.gy)));
-  // A sparse sample of path tiles get a small fence-post pair beside
-  // them, offset from center so it never covers the walkable path.
-  const fenceTiles = Array.from(pathTiles).filter((_, i) => i % 4 === 0);
+  const house = isoToXY(FARMHOUSE.gx, FARMHOUSE.gy)
 
   return (
-    <>
-      <div
-        className="pointer-events-none absolute rounded-full bg-amber-200/40 blur-3xl dark:bg-amber-400/10"
-        style={{ width: 220, height: 220, right: -60, top: -100 }}
-      />
+    <svg
+      viewBox={`0 0 ${WORLD_W} ${WORLD_H}`}
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+    >
+      {/* grass tiles */}
+      {tiles.map(({ gx, gy }) => (
+        <polygon
+          key={`${gx}-${gy}`}
+          points={tilePoints(gx, gy)}
+          fill={grassShade(gx, gy)}
+          stroke="#00000010"
+          strokeWidth="1"
+        />
+      ))}
 
-      {tiles.map(({ gx, gy }) => {
-        const { left, top } = isoPosition(gx, gy);
-        const isPath = pathTiles.has(tileKey(gx, gy));
+      {/* dirt paths from farmhouse to each asset, terminating in a landing pad
+          that sits exactly under the marker's ground anchor */}
+      {assetTiles.map(({ gx, gy }, i) => {
+        const p = isoToXY(gx, gy)
         return (
-          <div
-            key={tileKey(gx, gy)}
-            className={`absolute border border-emerald-900/5 dark:border-emerald-100/5 ${
-              isPath ? PATH_SHADE : grassShade(gx, gy)
-            }`}
-            style={{
-              left,
-              top,
-              width: TILE_W,
-              height: TILE_H,
-              clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
-              zIndex: gx + gy,
-            }}
-          />
-        );
+          <g key={i}>
+            {/* soft path shadow for depth */}
+            <line
+              x1={house.x}
+              y1={house.y + 2}
+              x2={p.x}
+              y2={p.y + 2}
+              stroke="#00000022"
+              strokeWidth="16"
+              strokeLinecap="round"
+            />
+            <line
+              x1={house.x}
+              y1={house.y}
+              x2={p.x}
+              y2={p.y}
+              stroke="var(--soil)"
+              strokeWidth="13"
+              strokeLinecap="round"
+              opacity="0.7"
+            />
+            {/* landing pad exactly on the asset tile — the marker anchors here */}
+            <ellipse cx={p.x} cy={p.y} rx="18" ry="9" fill="var(--soil)" opacity="0.85" />
+            <ellipse cx={p.x} cy={p.y} rx="11" ry="5.5" fill="#00000026" />
+          </g>
+        )
       })}
 
-      {CORNERS.map(({ gx, gy }) => {
-        const { left, top } = isoPosition(gx, gy);
+      {/* scenery trees */}
+      {TREES.map(({ gx, gy }, i) => {
+        const { x, y } = isoToXY(gx, gy)
         return (
-          <div
-            key={`tree-${gx}-${gy}`}
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-2xl opacity-80"
-            style={{ left: left + TILE_W / 2, top: top + TILE_H / 2, zIndex: gx + gy + 50 }}
-            aria-hidden
-          >
-            🌳
-          </div>
-        );
+          <g key={`t-${i}`}>
+            <ellipse cx={x} cy={y + 6} rx="12" ry="5" fill="#00000018" />
+            <rect x={x - 2.5} y={y - 6} width="5" height="14" rx="2" fill="#7c4a1e" />
+            <circle cx={x} cy={y - 14} r="12" fill="#3f9142" />
+            <circle cx={x - 7} cy={y - 10} r="8" fill="#4ba350" />
+            <circle cx={x + 7} cy={y - 11} r="7" fill="#357a38" />
+          </g>
+        )
       })}
 
-      {decorativeTrees.map(({ gx, gy }) => {
-        const { left, top } = isoPosition(gx, gy);
+      {/* scenery bushes */}
+      {BUSHES.map(({ gx, gy }, i) => {
+        const { x, y } = isoToXY(gx, gy)
         return (
-          <div
-            key={`extra-tree-${gx}-${gy}`}
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-xl opacity-75"
-            style={{ left: left + TILE_W / 2, top: top + TILE_H / 2, zIndex: gx + gy + 45 }}
-            aria-hidden
-          >
-            🌳
-          </div>
-        );
+          <g key={`b-${i}`}>
+            <ellipse cx={x} cy={y + 4} rx="9" ry="4" fill="#00000015" />
+            <circle cx={x - 5} cy={y} r="6" fill="#4ba350" />
+            <circle cx={x + 5} cy={y} r="6" fill="#3f9142" />
+            <circle cx={x} cy={y - 3} r="7" fill="#48a04d" />
+          </g>
+        )
       })}
 
-      {decorativeBushes.map(({ gx, gy }) => {
-        const { left, top } = isoPosition(gx, gy);
-        return (
-          <div
-            key={`bush-${gx}-${gy}`}
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-lg opacity-70"
-            style={{ left: left + TILE_W / 2, top: top + TILE_H / 2, zIndex: gx + gy + 45 }}
-            aria-hidden
-          >
-            🌿
-          </div>
-        );
-      })}
+      {/* well */}
+      <Well x={isoToXY(3, 5).x} y={isoToXY(3, 5).y} />
 
-      {fenceTiles.map((key) => {
-        const [gx, gy] = key.split("-").map(Number);
-        const { left, top } = isoPosition(gx, gy);
-        return (
-          <div
-            key={`fence-${key}`}
-            className="pointer-events-none absolute flex -translate-y-1/2 gap-[3px] opacity-70"
-            style={{ left: left + TILE_W / 2 + 16, top: top + TILE_H / 2, zIndex: gx + gy + 40 }}
-            aria-hidden
-          >
-            <div className="h-3 w-[3px] rounded-sm bg-amber-800/80 dark:bg-amber-600/70" />
-            <div className="h-3 w-[3px] rounded-sm bg-amber-800/80 dark:bg-amber-600/70" />
-          </div>
-        );
-      })}
+      {/* farmhouse at (5,5) */}
+      <g>
+        <ellipse cx={house.x} cy={house.y + 14} rx={TILE_W / 2} ry={TILE_H / 3} fill="#00000022" />
+        {/* base */}
+        <rect x={house.x - 26} y={house.y - 14} width="52" height="30" rx="3" fill="#e7d3a1" />
+        <rect x={house.x - 26} y={house.y - 14} width="52" height="30" rx="3" fill="#00000010" />
+        {/* roof */}
+        <path d={`M${house.x - 32} ${house.y - 12} L${house.x} ${house.y - 34} L${house.x + 32} ${house.y - 12} Z`} fill="#b45309" />
+        {/* door + window */}
+        <rect x={house.x - 6} y={house.y - 2} width="12" height="18" rx="2" fill="#7c2d12" />
+        <rect x={house.x - 20} y={house.y - 6} width="9" height="9" rx="1" fill="#93c5fd" />
+        <rect x={house.x + 11} y={house.y - 6} width="9" height="9" rx="1" fill="#93c5fd" />
+      </g>
+    </svg>
+  )
+}
 
-      {showWell &&
-        (() => {
-          const { left, top } = isoPosition(WELL_POS.gx, WELL_POS.gy);
-          return (
-            <div
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-xl opacity-90"
-              style={{ left: left + TILE_W / 2, top: top + TILE_H / 2, zIndex: WELL_POS.gx + WELL_POS.gy + 45 }}
-              aria-hidden
-            >
-              ⛲
-            </div>
-          );
-        })()}
-
-      {showVehicle &&
-        (() => {
-          const { left, top } = isoPosition(VEHICLE_POS.gx, VEHICLE_POS.gy);
-          return (
-            <div
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-xl opacity-90"
-              style={{
-                left: left + TILE_W / 2,
-                top: top + TILE_H / 2,
-                zIndex: VEHICLE_POS.gx + VEHICLE_POS.gy + 45,
-              }}
-              aria-hidden
-            >
-              🚜
-            </div>
-          );
-        })()}
-
-      {decorativePeople.map(({ gx, gy }) => {
-        const { left, top } = isoPosition(gx, gy);
-        return (
-          <div
-            key={`person-${gx}-${gy}`}
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-lg opacity-90"
-            style={{ left: left + TILE_W / 2, top: top + TILE_H / 2, zIndex: gx + gy + 45 }}
-            aria-hidden
-          >
-            🧑‍🌾
-          </div>
-        );
-      })}
-
-      <div
-        className="pointer-events-none absolute -translate-x-1/2 -translate-y-[80%] text-3xl"
-        style={{
-          left: farmhousePos.left + TILE_W / 2,
-          top: farmhousePos.top,
-          zIndex: FARMHOUSE_POS.gx + FARMHOUSE_POS.gy + 50,
-        }}
-        aria-hidden
-      >
-        🏡
-      </div>
-    </>
-  );
+function Well({ x, y }: { x: number; y: number }) {
+  return (
+    <g>
+      <ellipse cx={x} cy={y + 6} rx="11" ry="5" fill="#00000018" />
+      <ellipse cx={x} cy={y} rx="10" ry="5" fill="#78716c" />
+      <ellipse cx={x} cy={y} rx="7" ry="3.4" fill="#1c1917" />
+      <rect x={x - 9} y={y - 16} width="3" height="16" fill="#7c4a1e" />
+      <rect x={x + 6} y={y - 16} width="3" height="16" fill="#7c4a1e" />
+      <path d={`M${x - 11} ${y - 16} L${x} ${y - 22} L${x + 11} ${y - 16} Z`} fill="#b91c1c" />
+    </g>
+  )
 }

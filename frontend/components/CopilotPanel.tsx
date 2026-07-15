@@ -1,175 +1,180 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { askCopilot, getDashboardSummary, type DashboardSummary } from "@/lib/api";
-import { useApiData } from "@/lib/useApiData";
-import { RecommendationCard } from "@/components/RecommendationCard";
+import { useRef, useState } from "react"
+import { Sparkles, Send, User, Bot } from "lucide-react"
+import { askCopilot } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
-interface Exchange {
-  question: string;
-  answer: string;
-  pending: boolean;
-  error?: string;
+interface ChatMessage {
+  id: string
+  role: "user" | "assistant"
+  text: string
 }
 
-const EXAMPLE_QUESTIONS = [
-  "What should I do today?",
-  "Should I feed the fish?",
-  "How healthy is the farm?",
-];
+const SUGGESTIONS = [
+  "What needs my attention today?",
+  "Why is the tilapia pond flagged?",
+  "When should I harvest the mango orchard?",
+  "Summarize this week's egg production",
+]
 
 export function CopilotPanel() {
-  const [open, setOpen] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [exchanges, setExchanges] = useState<Exchange[]>([]);
-  const [asking, setAsking] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "seed",
+      role: "assistant",
+      text: "Hi, I'm your FarmTwin copilot. Ask me about any asset, alert, or recommendation and I'll explain the reasoning behind it.",
+    },
+  ])
+  const [input, setInput] = useState("")
+  const [pending, setPending] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const nextIdRef = useRef(0)
 
-  const { data: summary, error: recsError } = useApiData<DashboardSummary>(
-    "dashboard-summary",
-    getDashboardSummary,
-  );
-  const recommendations = summary?.top_recommendations ?? null;
+  function nextId(prefix: string) {
+    nextIdRef.current += 1
+    return `${prefix}-${nextIdRef.current}`
+  }
 
-  async function handleAsk(raw: string) {
-    const trimmed = raw.trim();
-    if (!trimmed || asking) return;
-    setAsking(true);
-    setQuestion("");
-    setExchanges((prev) => [...prev, { question: trimmed, answer: "", pending: true }]);
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
+
+  async function send(question: string) {
+    const q = question.trim()
+    if (!q || pending) return
+    const userMsg: ChatMessage = { id: nextId("u"), role: "user", text: q }
+    setMessages((prev) => [...prev, userMsg])
+    setInput("")
+    setPending(true)
+    scrollToBottom()
     try {
-      const res = await askCopilot(trimmed);
-      setExchanges((prev) =>
-        prev.map((ex, i) => (i === prev.length - 1 ? { ...ex, answer: res.answer, pending: false } : ex)),
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setExchanges((prev) =>
-        prev.map((ex, i) => (i === prev.length - 1 ? { ...ex, pending: false, error: message } : ex)),
-      );
+      const { answer } = await askCopilot(q)
+      setMessages((prev) => [...prev, { id: nextId("a"), role: "assistant", text: answer }])
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId("e"), role: "assistant", text: "I couldn't reach the farm model just now. Try again in a moment." },
+      ])
     } finally {
-      setAsking(false);
+      setPending(false)
+      scrollToBottom()
     }
   }
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-emerald-700"
-      >
-        <span aria-hidden>🤖</span> Ask Copilot
-      </button>
+    <div className="flex h-full flex-col">
+      <header className="flex items-center gap-3 border-b border-border px-5 py-4">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <h2 className="font-serif text-lg font-semibold leading-tight">Farm Copilot</h2>
+          <p className="text-xs text-muted-foreground">Grounded in your live twin data</p>
+        </div>
+      </header>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex justify-end bg-black/30"
-          onClick={() => setOpen(false)}
-        >
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+        {messages.map((msg) => (
           <div
-            className="flex h-full w-full max-w-md flex-col bg-white shadow-xl dark:bg-zinc-950"
-            onClick={(e) => e.stopPropagation()}
+            key={msg.id}
+            className={cn("flex items-start gap-3", msg.role === "user" && "flex-row-reverse")}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <p className="font-semibold text-zinc-950 dark:text-zinc-50">AI Copilot</p>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close copilot panel"
-                className="text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                  Today&rsquo;s priorities
-                </p>
-                {recsError && (
-                  <p className="text-sm text-red-600 dark:text-red-400">{recsError}</p>
-                )}
-                {recommendations === null && !recsError && (
-                  <p className="text-sm text-zinc-500">Loading…</p>
-                )}
-                {recommendations?.length === 0 && (
-                  <p className="text-sm text-zinc-500">No pending recommendations right now.</p>
-                )}
-                <div className="flex flex-col gap-3">
-                  {recommendations?.map((rec) => (
-                    <RecommendationCard key={rec.recommendation_id} recommendation={rec} />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                  Ask a question
-                </p>
-                {exchanges.length === 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {EXAMPLE_QUESTIONS.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => handleAsk(q)}
-                        className="rounded-full border border-zinc-300 px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {exchanges.map((ex, i) => (
-                  <div key={i} className="flex flex-col gap-1">
-                    <p className="max-w-[85%] self-end rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white">
-                      {ex.question}
-                    </p>
-                    {ex.pending ? (
-                      <p className="rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-                        Thinking…
-                      </p>
-                    ) : ex.error ? (
-                      <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                        {ex.error}
-                      </p>
-                    ) : (
-                      <p className="whitespace-pre-wrap rounded-lg bg-zinc-100 px-3 py-2 text-sm text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                        {ex.answer}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAsk(question);
-              }}
-              className="flex gap-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
+            <span
+              className={cn(
+                "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                msg.role === "assistant" ? "bg-primary/15 text-primary" : "bg-secondary text-secondary-foreground",
+              )}
             >
-              <input
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="What should I do today?"
-                disabled={asking}
-                className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              />
-              <button
-                type="submit"
-                disabled={asking || !question.trim()}
-                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                Ask
-              </button>
-            </form>
+              {msg.role === "assistant" ? (
+                <Bot className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <User className="h-4 w-4" aria-hidden="true" />
+              )}
+            </span>
+            <div
+              className={cn(
+                "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+                msg.role === "assistant"
+                  ? "rounded-tl-sm bg-secondary text-secondary-foreground"
+                  : "rounded-tr-sm bg-primary text-primary-foreground",
+              )}
+            >
+              {msg.text}
+            </div>
           </div>
+        ))}
+
+        {pending && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <Bot className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-secondary px-4 py-3">
+              <Dot delay="0ms" />
+              <Dot delay="150ms" />
+              <Dot delay="300ms" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {messages.length <= 1 && (
+        <div className="flex flex-wrap gap-2 px-5 pb-3">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => send(s)}
+              className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            >
+              {s}
+            </button>
+          ))}
         </div>
       )}
-    </>
-  );
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          send(input)
+        }}
+        className="flex items-center gap-2 border-t border-border px-4 py-3"
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault()
+              send(input)
+            }
+          }}
+          placeholder="Ask about an asset, alert, or task..."
+          className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none transition-colors focus:border-primary"
+          aria-label="Ask the farm copilot a question"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || pending}
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
+          aria-label="Send message"
+        >
+          <Send className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function Dot({ delay }: { delay: string }) {
+  return (
+    <span
+      className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/60"
+      style={{ animationDelay: delay }}
+    />
+  )
 }

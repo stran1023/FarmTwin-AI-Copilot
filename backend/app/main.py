@@ -79,41 +79,110 @@ def _recommendation_id(asset_id: str, ts: datetime, idx: int) -> str:
 
 
 _MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}\s", re.MULTILINE)
-_NARRATION_LEAD_INS = (
-    "I'll ", "I will ", "Let me ", "Let's ", "I'm going to ",
-    "I have the ", "I have a ", "I've got the ",
-)
 _SENTENCE_END_RE = re.compile(r"[.!?]")
+# The agent's raw narration is sometimes glued directly onto the real answer
+# with no separating whitespace at all (e.g. "...pull the driving
+# risks.Today's recommendation activity..."). Real prose always has a space
+# after sentence-ending punctuation, so punctuation immediately followed by
+# a capital letter or a markdown bold marker -- no space -- is a reliable
+# narration/answer seam, independent of whatever words the narration used.
+# Requiring an uppercase/`*` follower (not a digit) also keeps this from
+# ever firing on a decimal number like "3.5".
+_GLUED_BOUNDARY_RE = re.compile(r"[.!?](?=[A-Z*])")
+
+
+def _strip_glued_narration(text: str) -> str:
+    """Cut at the LAST glued punctuation-to-capital seam, since narration
+    itself can span multiple properly-spaced sentences before the final,
+    space-less handoff into the real answer."""
+    matches = list(_GLUED_BOUNDARY_RE.finditer(text))
+    if not matches:
+        return text
+    return text[matches[-1].end():].lstrip()
+
+
+# Some raw responses have no glued boundary anywhere -- the agent writes
+# perfectly normal, evenly-spaced prose all the way from its opening
+# narration into the real answer (e.g. "Only one recommendation matched
+# today's date exactly. Let me broaden to recent recommendations..."),
+# so there's no typographical seam left to cut at. The only remaining
+# signal is content: narration talks about the agent's own process (first-
+# person "I'll"/"let me", references to "the user"/"my filter"), or leaks a
+# raw snake_case field name (e.g. "approved_at") that a genuine natural-
+# language farm answer never uses. Match anywhere in the sentence, not just
+# at position 0 -- a narration sentence can open with a plain-looking
+# clause and only reveal itself later ("...but the user asked about
+# \"today's\" decisions broadly, so I'll summarize...").
+_NARRATION_SIGNAL_RE = re.compile(
+    r"\bI'll\b|\bI will\b|\bI'm going to\b|\bLet me\b|\bLet's\b|\bI have\b|\bI've\b|"
+    r"\bthe user\b|\bmy filter\b|\bmy query\b|\bfiltering to\b|\bfiltering for\b|\bquerying\b",
+    re.IGNORECASE,
+)
+_FIELD_NAME_RE = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
+
+
+def _looks_like_narration(sentence: str) -> bool:
+    return bool(_NARRATION_SIGNAL_RE.search(sentence) or _FIELD_NAME_RE.search(sentence))
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split into sentences, each retaining its own leading whitespace and
+    trailing punctuation, using the same boundary as _SENTENCE_END_RE."""
+    sentences = []
+    start = 0
+    for match in _SENTENCE_END_RE.finditer(text):
+        sentences.append(text[start : match.end()])
+        start = match.end()
+    if start < len(text):
+        sentences.append(text[start:])
+    return sentences
+
+
+# Narration is always a contiguous prefix in every shape observed so far --
+# never interleaved with or following the real answer -- so it's safe to
+# only scan the first few sentences rather than the whole response (which
+# would risk a coincidental match deep inside a long, legitimate answer).
+# 4 comfortably covers every observed case (at most 2 narration sentences).
+_NARRATION_SCAN_WINDOW = 4
 
 
 def _strip_narration_prefix(text: str) -> str:
-    """Repeatedly strip leading tool-planning sentences ("I'll query...",
-    "Let me check...") for the case where the agent emits no structural
-    marker at all (no <answer> tag, no markdown heading) -- these sentences
-    are sometimes joined with no separating whitespace, so this cuts at the
-    first sentence-ending punctuation rather than assuming a trailing
-    space."""
-    while any(text.startswith(lead) for lead in _NARRATION_LEAD_INS):
-        match = _SENTENCE_END_RE.search(text)
-        if not match:
-            break
-        text = text[match.end():].lstrip()
-    return text
+    """Scans the first few sentences for ones that look like narration
+    (see _looks_like_narration) and cuts everything up to and including
+    the LAST such sentence in that window -- not just a leading run, since
+    a narration sentence can sandwich a plain-looking one that doesn't
+    itself trip any signal (e.g. "Only one recommendation matched today's
+    filter." between two sentences that clearly do)."""
+    sentences = _split_sentences(text)
+    window = sentences[:_NARRATION_SCAN_WINDOW]
+
+    last_narration_idx = -1
+    for i, sentence in enumerate(window):
+        if _looks_like_narration(sentence):
+            last_narration_idx = i
+    if last_narration_idx == -1:
+        return text
+
+    cut = sum(len(s) for s in sentences[: last_narration_idx + 1])
+    return text[cut:].lstrip()
 
 
 def _clean_agent_answer(text: str) -> str:
     """FARM_OPS_AGENT's response can include its own tool-call narration
     ahead of the real answer -- strip that narration so it doesn't leak
-    into summaries. Observed in three shapes across calls: an explicit
-    <answer> tag, narration running straight into the first markdown
-    heading with no tag, or narration with neither marker at all -- handle
-    all three rather than assuming any one is guaranteed."""
+    into summaries. Observed shapes across calls: an explicit <answer>
+    tag, narration running straight into the first markdown heading with
+    no tag, or narration glued directly onto the answer with no marker and
+    no separating whitespace at all -- handle all of them rather than
+    assuming any one is guaranteed."""
     if "<answer>" in text:
         text = text.split("<answer>", 1)[1]
     else:
         match = _MARKDOWN_HEADING_RE.search(text)
         if match:
             text = text[match.start():]
+        else:
+            text = _strip_glued_narration(text)
     return _strip_narration_prefix(text.strip())
 
 

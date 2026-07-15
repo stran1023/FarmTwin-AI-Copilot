@@ -1,45 +1,40 @@
-"use client";
+import type { Asset } from "@/lib/types"
 
-import type { AssetOverview } from "@/lib/api";
-import { MarkerFrame } from "@/components/MarkerFrame";
-
-/** Water gradient + ring tint per status -- the water itself communicates
- * health (murky and dark when critical, bright and clear when healthy),
- * not just an overlay ring color. */
-const WATER_BY_STATUS: Record<string, { water: string; ring: string }> = {
-  healthy: { water: "from-sky-300 to-blue-500", ring: "ring-emerald-400" },
-  needs_attention: { water: "from-cyan-700 to-blue-900", ring: "ring-amber-400" },
-  critical: { water: "from-amber-900/80 to-stone-800", ring: "ring-red-500 animate-pulse" },
-};
-
-export function FishPondMarker({ asset, isSelected }: { asset: AssetOverview; isSelected?: boolean }) {
-  const palette = WATER_BY_STATUS[asset.status] ?? WATER_BY_STATUS.healthy;
-  const isCritical = asset.status === "critical";
+/** Water tints murky/still vs bright/clear off the real risk-derived clarity. */
+export function FishPondMarker({ asset }: { asset: Asset }) {
+  const clarity = asset.visual.water_clarity ?? 0.6
+  // Clear -> bright blue; murky -> desaturated green-brown.
+  const water = clarity > 0.6 ? "#38bdf8" : clarity > 0.4 ? "#4a9db0" : "#6b8e6b"
+  const waterDark = clarity > 0.6 ? "#0ea5e9" : clarity > 0.4 ? "#3a7d8c" : "#556b55"
 
   return (
-    <MarkerFrame ring={palette.ring} isSelected={isSelected}>
-      <div className={`absolute inset-0 bg-gradient-to-br ${palette.water}`} />
-
-      <div className="absolute inset-y-0 w-1/2 animate-[water-shimmer_3.5s_ease-in-out_infinite] bg-white/40 blur-[2px]" />
-
-      {!isCritical && (
-        <>
-          <span
-            className="absolute left-[28%] top-[30%] animate-[fish-swim-a_4s_ease-in-out_infinite] text-xs"
-            aria-hidden
-          >
-            🐟
-          </span>
-          <span
-            className="absolute left-[55%] top-[52%] animate-[fish-swim-b_5s_ease-in-out_infinite] text-xs"
-            aria-hidden
-          >
-            🐟
-          </span>
-        </>
-      )}
-
-      <div className="absolute -right-1 bottom-0 h-3 w-7 -rotate-6 rounded-sm bg-amber-800/80" />
-    </MarkerFrame>
-  );
+    <svg viewBox="0 0 56 56" className="size-12" role="img" aria-hidden="true">
+      {/* pond basin */}
+      <ellipse cx="28" cy="34" rx="22" ry="15" fill={waterDark} />
+      <ellipse cx="28" cy="32" rx="20" ry="13" fill={water} />
+      {/* shimmer */}
+      <ellipse
+        cx="22"
+        cy="28"
+        rx="7"
+        ry="2.4"
+        fill="#ffffff"
+        opacity="0.55"
+        style={{ animation: "water-shimmer 2.4s ease-in-out infinite" }}
+      />
+      {/* fish */}
+      <g fill="#f97316">
+        <ellipse cx="24" cy="34" rx="4" ry="2.2" />
+        <path d="M20 34 l-3 -2 v4 z" />
+      </g>
+      <g fill="#fbbf24">
+        <ellipse cx="34" cy="30" rx="3" ry="1.7" />
+        <path d="M37 30 l3 -1.5 v3 z" />
+      </g>
+      {/* little dock */}
+      <rect x="30" y="18" width="14" height="3" rx="1" fill="#a16207" />
+      <rect x="31" y="21" width="2" height="7" fill="#854d0e" />
+      <rect x="41" y="21" width="2" height="7" fill="#854d0e" />
+    </svg>
+  )
 }

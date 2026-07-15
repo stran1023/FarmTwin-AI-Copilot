@@ -1,57 +1,40 @@
-"use client";
+"use client"
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getSnapshot, load, subscribe } from "@/lib/dataCache";
+import { useCallback, useSyncExternalStore } from "react"
+import { subscribe, getSnapshot, ensure, refresh } from "./dataCache"
 
-const DEFAULT_TTL_MS = 20000;
+export interface ApiDataResult<T> {
+  data: T | undefined
+  loading: boolean
+  error: unknown
+  refresh: () => void
+}
 
-export function useApiData<T>(key: string, fetcher: () => Promise<T>, ttlMs: number = DEFAULT_TTL_MS) {
-  const entry = useSyncExternalStore(
-    (onStoreChange) => subscribe(key, onStoreChange),
-    () => getSnapshot<T>(key),
-    () => undefined,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [initialLoading, setInitialLoading] = useState(!entry);
-  const fetcherRef = useRef(fetcher);
+/**
+ * Subscribe a component to a cache key via useSyncExternalStore. Multiple
+ * components using the same key share one fetch and re-render together when
+ * the cached value changes (including cross-panel invalidate()).
+ */
+export function useApiData<T>(key: string, fetcher: () => Promise<T>): ApiDataResult<T> {
+  ensure(key, fetcher)
 
-  useEffect(() => {
-    fetcherRef.current = fetcher;
-  });
+  const subscribeToKey = useCallback((onChange: () => void) => subscribe(key, onChange), [key])
 
-  useEffect(() => {
-    let cancelled = false;
-    load(key, () => fetcherRef.current(), ttlMs)
-      .then(() => {
-        if (!cancelled) setError(null);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setInitialLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [key, ttlMs]);
+  const getKeySnapshot = useCallback(() => getSnapshot<T>(key), [key])
+  // Always "no data yet" on the server, never the live module-level cache --
+  // dataCache's store is a singleton that persists across requests within
+  // the same Next.js server process, so reading it during SSR can return
+  // whatever a *previous* request already fetched. The client's very first
+  // render (before its own fetch resolves) is always undefined, so the
+  // server snapshot must match that deterministically or hydration mismatches.
+  const getServerSnapshot = useCallback((): undefined => undefined, [])
 
-  const refresh = useCallback(() => {
-    return load(key, () => fetcherRef.current(), ttlMs, true)
-      .then((data) => {
-        setError(null);
-        return data;
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-        throw err;
-      });
-  }, [key, ttlMs]);
+  const entry = useSyncExternalStore(subscribeToKey, getKeySnapshot, getServerSnapshot)
 
   return {
     data: entry?.data,
-    loading: initialLoading && !entry,
-    error,
-    refresh,
-  };
+    loading: entry?.data === undefined && entry?.error === undefined,
+    error: entry?.error,
+    refresh: useCallback(() => refresh(key), [key]),
+  }
 }

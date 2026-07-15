@@ -1,54 +1,33 @@
-"use client";
+import type { Asset } from "@/lib/types"
 
-import type { AssetOverview } from "@/lib/api";
-import { MarkerFrame } from "@/components/MarkerFrame";
+/** Rice blades' height/color key off the real growth_stage (0-4). */
+export function RiceFieldMarker({ asset }: { asset: Asset }) {
+  const stage = asset.visual.growth_stage ?? 2
+  const t = Math.max(0, Math.min(4, stage)) / 4
+  const bladeHeight = 6 + t * 16 // taller as it matures
+  // Young = fresh green, mature/heading = golden green.
+  const blade = t > 0.7 ? "#a3b545" : t > 0.4 ? "#7bb04a" : "#5fa83d"
+  const baseY = 44
 
-const RING_BY_STATUS: Record<string, string> = {
-  healthy: "ring-emerald-400",
-  needs_attention: "ring-amber-400",
-  critical: "ring-red-500 animate-pulse",
-};
-
-/** Stalk height/color per real growth_stage -- short and pale as a
- * seedling, tall and green through vegetative/reproductive, golden by
- * ripening/harvest_ready. Mirrors GROWTH_STAGES order in
- * backend/app/services/asset_simulator.py. */
-const STAGE_STYLE: Record<string, { height: number; color: string }> = {
-  seedling: { height: 8, color: "bg-lime-400" },
-  vegetative: { height: 14, color: "bg-emerald-500" },
-  reproductive: { height: 18, color: "bg-emerald-600" },
-  ripening: { height: 18, color: "bg-amber-400" },
-  harvest_ready: { height: 18, color: "bg-amber-500" },
-};
-
-const BLADE_COUNT = 6;
-
-export function RiceFieldMarker({ asset, isSelected }: { asset: AssetOverview; isSelected?: boolean }) {
-  const ring = RING_BY_STATUS[asset.status] ?? RING_BY_STATUS.healthy;
-  const stage = STAGE_STYLE[asset.growth_stage ?? ""] ?? STAGE_STYLE.vegetative;
-  const irrigated = asset.irrigation_status === "active";
+  const columns = [12, 20, 28, 36, 44]
 
   return (
-    <MarkerFrame
-      ring={ring}
-      isSelected={isSelected}
-      className={`flex items-end justify-center ${
-        irrigated ? "bg-sky-100 dark:bg-sky-950/50" : "bg-amber-100/70 dark:bg-amber-950/30"
-      }`}
-    >
-      {irrigated && (
-        <div className="absolute inset-x-0 bottom-0 h-4 animate-[water-shimmer_4s_ease-in-out_infinite] bg-sky-300/50" />
-      )}
-
-      <div className="relative z-10 mb-1 flex items-end gap-[3px]">
-        {Array.from({ length: BLADE_COUNT }).map((_, i) => (
-          <span
-            key={i}
-            className={`w-[3px] origin-bottom animate-[rice-sway_2.4s_ease-in-out_infinite] rounded-full ${stage.color}`}
-            style={{ height: stage.height, animationDelay: `${i * 0.12}s` }}
-          />
-        ))}
-      </div>
-    </MarkerFrame>
-  );
+    <svg viewBox="0 0 56 56" className="size-12" role="img" aria-hidden="true">
+      {/* flooded paddy water */}
+      <ellipse cx="28" cy="46" rx="24" ry="8" fill="#7dd3fc" opacity="0.6" />
+      {/* paddy soil bund */}
+      <rect x="6" y="43" width="44" height="6" rx="3" fill="#78350f" opacity="0.35" />
+      {columns.map((x, i) => {
+        const h = bladeHeight * (i % 2 === 0 ? 1 : 0.85)
+        return (
+          <g key={x} style={{ transformOrigin: `${x}px ${baseY}px`, animation: `gentle-sway ${1.8 + i * 0.2}s ease-in-out infinite` }}>
+            <path d={`M${x} ${baseY} q -3 ${-h * 0.6} -1 ${-h}`} stroke={blade} strokeWidth="2" fill="none" strokeLinecap="round" />
+            <path d={`M${x} ${baseY} q 3 ${-h * 0.6} 1 ${-h}`} stroke={blade} strokeWidth="2" fill="none" strokeLinecap="round" />
+            <path d={`M${x} ${baseY} v ${-h}`} stroke={blade} strokeWidth="2" fill="none" strokeLinecap="round" />
+            {t > 0.6 && <circle cx={x} cy={baseY - h} r="1.6" fill="#eab308" />}
+          </g>
+        )
+      })}
+    </svg>
+  )
 }

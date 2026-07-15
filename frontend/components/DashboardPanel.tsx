@@ -1,174 +1,228 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { getDashboardSummary } from "@/lib/api";
-import { useApiData } from "@/lib/useApiData";
-import { healthScoreTrend } from "@/lib/dataCache";
-import { Card } from "@/components/Card";
-import { RiskBadge } from "@/components/RiskBadge";
-import { RecommendationCard } from "@/components/RecommendationCard";
-import { HealthGauge } from "@/components/HealthGauge";
-
-function healthColor(score: number) {
-  if (score >= 75) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 45) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
-}
+import {
+  BellRing,
+  CheckCircle2,
+  CloudRain,
+  Droplets,
+  ListChecks,
+  Sparkles,
+  Thermometer,
+  Wind,
+} from "lucide-react"
+import type { DashboardSummary } from "@/lib/types"
+import { getDashboardSummary } from "@/lib/api"
+import { useApiData } from "@/lib/useApiData"
+import { Card, CardHeader } from "./Card"
+import { HealthGauge } from "./HealthGauge"
+import { RiskBadge } from "./RiskBadge"
+import { RecommendationCard } from "./RecommendationCard"
 
 export function DashboardPanel({
   onSelectAsset,
-  onHighlightAsset,
+  onHoverAsset,
 }: {
-  onSelectAsset: (assetId: string) => void;
-  onHighlightAsset?: (assetId: string | null) => void;
+  onSelectAsset: (id: string) => void
+  onHoverAsset?: (id: string | null) => void
 }) {
-  const { data: summary, error } = useApiData("dashboard-summary", getDashboardSummary);
-  const highlight = onHighlightAsset ?? (() => {});
-  const [trend, setTrend] = useState<"up" | "down" | "flat" | null>(null);
+  const { data, loading } = useApiData<DashboardSummary>("dashboard-summary", getDashboardSummary)
 
-  useEffect(() => {
-    const score = summary?.farm_health_score;
-    if (score === undefined) return;
-    // Deferred via microtask (matches useApiData's fix for the same
-    // lint rule) so this isn't a synchronous setState-in-effect call.
-    Promise.resolve().then(() => setTrend(healthScoreTrend(score)));
-  }, [summary?.farm_health_score]);
+  if (loading || !data) {
+    return <PanelSkeleton />
+  }
+
+  const { farm_health_score, weather, active_alerts, tasks_today, status_overview, recommendations } =
+    data
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Farm dashboard</h1>
-
-      {error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          {error}
+    <div className="flex flex-col gap-4 p-4">
+      <header>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Farm overview
         </p>
-      )}
-      {!summary && !error && <p className="text-zinc-500">Loading dashboard…</p>}
+        <h2 className="text-xl font-extrabold tracking-tight text-balance">Good day on the farm</h2>
+      </header>
 
-      {summary && (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Card>
-              <p className="mb-1 text-sm font-semibold text-zinc-500 dark:text-zinc-400">Farm health score</p>
-              <HealthGauge score={summary.farm_health_score} trend={trend} />
-            </Card>
-            <Card>
-              <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Active alerts</p>
-              <p className="text-4xl font-bold text-zinc-950 dark:text-zinc-50">
-                {summary.active_alerts.length}
+      {/* Health + weather */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card className="flex items-center p-4">
+          <HealthGauge score={farm_health_score} />
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Weather
               </p>
-            </Card>
-            <Card>
-              <p className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Tasks due today</p>
-              <p className="text-4xl font-bold text-zinc-950 dark:text-zinc-50">
-                {summary.tasks_due_today.length}
+              <p className="mt-1 flex items-start text-4xl font-extrabold tabular-nums">
+                {Math.round(weather.temp_c)}
+                <span className="mt-1 text-lg">°C</span>
               </p>
-            </Card>
-          </div>
-
-          {summary.weather && (
-            <Card>
-              <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">Weather</p>
-              <div className="flex items-end gap-4">
-                <div className="flex items-baseline gap-1.5">
-                  <span aria-hidden className="text-2xl">
-                    🌡️
-                  </span>
-                  <span className="text-4xl font-bold text-zinc-950 dark:text-zinc-50">
-                    {summary.weather.temp_c.toFixed(1)}°C
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span>💧 {summary.weather.humidity_pct.toFixed(0)}% humidity</span>
-                  <span>🌧️ {summary.weather.rainfall_mm.toFixed(1)} mm rain</span>
-                  <span>💨 {summary.weather.wind_speed_kmh.toFixed(0)} km/h wind</span>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {summary.active_alerts.length > 0 && (
-            <Card>
-              <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">Active alerts</p>
-              <div className="flex flex-col">
-                {summary.active_alerts.map((alert) => (
-                  <div
-                    key={`${alert.asset_id}-${alert.risk_type}`}
-                    onMouseEnter={() => highlight(alert.asset_id)}
-                    onMouseLeave={() => highlight(null)}
-                    className="flex items-start justify-between gap-3 border-b border-zinc-100 py-2 last:border-0 dark:border-zinc-800"
-                  >
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => onSelectAsset(alert.asset_id)}
-                        className="font-medium text-zinc-900 hover:underline dark:text-zinc-100"
-                      >
-                        {alert.asset_id}
-                      </button>
-                      <p className="text-sm text-zinc-600 dark:text-zinc-400">{alert.notes}</p>
-                    </div>
-                    <RiskBadge level={alert.risk_level} />
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-              Daily recommendations
-            </p>
-            {summary.top_recommendations.length === 0 ? (
-              <p className="text-sm text-zinc-500">No pending recommendations.</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {summary.top_recommendations.map((rec) => (
-                  <div
-                    key={rec.recommendation_id}
-                    onMouseEnter={() => highlight(rec.asset_id)}
-                    onMouseLeave={() => highlight(null)}
-                  >
-                    <RecommendationCard recommendation={rec} showAssetLink={false}>
-                      <button
-                        type="button"
-                        onClick={() => onSelectAsset(rec.asset_id)}
-                        className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
-                      >
-                        View asset &rarr;
-                      </button>
-                    </RecommendationCard>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card>
-            <p className="mb-2 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-              Asset status overview
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {summary.assets.map((asset) => (
-                <button
-                  key={asset.asset_id}
-                  type="button"
-                  onClick={() => onSelectAsset(asset.asset_id)}
-                  className="rounded-lg border border-zinc-200 p-3 text-center hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
-                >
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{asset.name}</p>
-                  <p className={`text-2xl font-bold ${healthColor(asset.health_score)}`}>
-                    {asset.health_score}
-                  </p>
-                  <p className="text-xs capitalize text-zinc-500 dark:text-zinc-400">
-                    {asset.status.replace("_", " ")}
-                  </p>
-                </button>
-              ))}
+              <p className="text-xs font-medium text-muted-foreground">{weather.condition}</p>
             </div>
-          </Card>
-        </>
-      )}
+            <Thermometer className="size-6 text-accent" aria-hidden="true" />
+          </div>
+          <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+            <WeatherStat icon={<Droplets className="size-3.5" />} label="Humidity" value={`${weather.humidity_pct}%`} />
+            <WeatherStat icon={<CloudRain className="size-3.5" />} label="Rain" value={`${weather.rainfall_mm} mm`} />
+            <WeatherStat icon={<Wind className="size-3.5" />} label="Wind" value={`${weather.wind_kph} kph`} />
+          </dl>
+        </Card>
+      </div>
+
+      {/* Active alerts */}
+      <Card>
+        <CardHeader
+          title="Active Alerts"
+          icon={<BellRing className="size-4 text-critical" aria-hidden="true" />}
+          action={
+            <span className="rounded-full bg-critical/15 px-2 py-0.5 text-xs font-bold text-critical">
+              {active_alerts.length}
+            </span>
+          }
+        />
+        <div className="flex flex-col gap-2 p-4 pt-3">
+          {active_alerts.length === 0 && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="size-4 text-healthy" aria-hidden="true" />
+              No active alerts. Everything looks calm.
+            </p>
+          )}
+          {active_alerts.map((alert) => (
+            <button
+              key={alert.id}
+              type="button"
+              onClick={() => onSelectAsset(alert.asset_id)}
+              onMouseEnter={() => onHoverAsset?.(alert.asset_id)}
+              onMouseLeave={() => onHoverAsset?.(null)}
+              className="flex w-full items-start gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:bg-secondary"
+            >
+              <RiskBadge status={alert.severity} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">{alert.asset_name}</span>
+                <span className="block text-sm text-muted-foreground text-pretty">
+                  {alert.message}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Tasks + status */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Tasks Due Today"
+            icon={<ListChecks className="size-4 text-primary" aria-hidden="true" />}
+          />
+          <ul className="flex flex-col gap-2 p-4 pt-3">
+            {tasks_today.map((task) => (
+              <li key={task.id} className="flex items-start gap-2 text-sm">
+                <span
+                  className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-md border ${
+                    task.done ? "border-healthy bg-healthy text-healthy-foreground" : "border-border"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {task.done && <CheckCircle2 className="size-3" />}
+                </span>
+                <span className={task.done ? "text-muted-foreground line-through" : ""}>
+                  {task.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card>
+          <CardHeader title="Asset Status" />
+          <div className="flex flex-col gap-2 p-4 pt-3">
+            {status_overview.map((row) => (
+              <div
+                key={row.status}
+                className="flex items-center justify-between rounded-xl bg-secondary/60 px-3 py-2"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <RiskBadge status={row.status} />
+                </span>
+                <span className="text-sm font-bold tabular-nums">{row.count}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* Recommendations */}
+      <section className="flex flex-col gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold">
+          <Sparkles className="size-4 text-primary" aria-hidden="true" />
+          Daily Recommendations
+        </h3>
+        {recommendations.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            All caught up — no pending recommendations right now.
+          </p>
+        )}
+        {recommendations.map((rec) => (
+          // A plain <div role="button">, not a real <button> -- RecommendationCard
+          // renders its own interactive buttons (View details/Approve/Reject),
+          // and a <button> cannot contain a nested <button> (invalid HTML,
+          // breaks hydration).
+          <div
+            key={rec.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelectAsset(rec.asset_id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onSelectAsset(rec.asset_id)
+              }
+            }}
+            onMouseEnter={() => onHoverAsset?.(rec.asset_id)}
+            onMouseLeave={() => onHoverAsset?.(null)}
+            className="block w-full cursor-pointer text-left"
+            aria-label={`Open ${rec.asset_name} to act on this recommendation`}
+          >
+            <RecommendationCard rec={rec} />
+          </div>
+        ))}
+      </section>
     </div>
-  );
+  )
+}
+
+function WeatherStat({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-lg bg-secondary/60 px-2 py-1.5">
+      <dt className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+        {icon}
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-sm font-bold tabular-nums">{value}</dd>
+    </div>
+  )
+}
+
+function PanelSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-4" aria-hidden="true">
+      <div className="h-6 w-40 animate-pulse rounded bg-muted" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="h-40 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-40 animate-pulse rounded-2xl bg-muted" />
+      </div>
+      <div className="h-32 animate-pulse rounded-2xl bg-muted" />
+      <div className="h-40 animate-pulse rounded-2xl bg-muted" />
+    </div>
+  )
 }

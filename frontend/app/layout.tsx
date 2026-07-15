@@ -1,48 +1,47 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
-import { CopilotPanel } from "@/components/CopilotPanel";
-import "./globals.css";
+import { Analytics } from '@vercel/analytics/next'
+import type { Metadata, Viewport } from 'next'
+import { Nunito_Sans, Fraunces } from 'next/font/google'
+import { TopNav } from '@/components/TopNav'
+import './globals.css'
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const nunito = Nunito_Sans({
+  subsets: ['latin'],
+  variable: '--font-nunito',
+  display: 'swap',
+})
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-fraunces',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "FarmTwin AI Copilot",
-  description: "AI decision-intelligence copilot for a living digital twin farm",
-};
+  title: 'FarmTwin — AI Farm Copilot',
+  description:
+    'A living digital twin of your integrated farm. Monitor fish ponds, poultry, rice, and orchards, and act on AI recommendations grounded in real data.',
+  generator: 'v0.app',
+}
+
+export const viewport: Viewport = {
+  colorScheme: 'light',
+  themeColor: '#f6f4ec',
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-zinc-50 dark:bg-black">
-        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <nav className="mx-auto flex max-w-7xl items-center gap-6 px-6 py-4 text-sm font-medium">
-            <Link href="/" className="text-zinc-950 dark:text-zinc-50">
-              Farm
-            </Link>
-            <Link href="/briefing" className="text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50">
-              Daily Briefing
-            </Link>
-          </nav>
-        </header>
-        <main className="w-full flex-1 px-6 py-8">{children}</main>
-        <CopilotPanel />
+    <html lang="en" className={`${nunito.variable} ${fraunces.variable} bg-background`}>
+      <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
+        <div className="flex min-h-dvh flex-col">
+          <TopNav />
+          <main className="flex-1">{children}</main>
+        </div>
+        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
-  );
+  )
 }

@@ -1,69 +1,66 @@
-"use client";
+import { AlertTriangle, Check } from "lucide-react"
+import type { Asset, AssetStatus } from "@/lib/types"
 
-import type { AssetOverview } from "@/lib/api";
-
-const RISK_SEVERITY: Record<string, number> = { healthy: 0, needs_attention: 1, critical: 2 };
-
-/** The single most urgent asset farm-wide (worst status, tie-broken by
- * lowest health_score) -- null if every asset is healthy. Only one
- * asset ever gets the spotlight pulse, so the eye goes straight to the
- * thing that actually needs attention instead of every elevated asset
- * competing for it. */
-export function topPriorityAssetId(assets: AssetOverview[]): string | null {
-  let best: AssetOverview | null = null;
-  for (const asset of assets) {
-    if (asset.status === "healthy") continue;
-    if (
-      !best ||
-      RISK_SEVERITY[asset.status] > RISK_SEVERITY[best.status] ||
-      (RISK_SEVERITY[asset.status] === RISK_SEVERITY[best.status] && asset.health_score < best.health_score)
-    ) {
-      best = asset;
-    }
-  }
-  return best?.asset_id ?? null;
+const SEVERITY_RANK: Record<AssetStatus, number> = {
+  critical: 3,
+  needs_attention: 2,
+  healthy: 1,
 }
 
-/** Layers on top of feat-024-027's per-type marker graphics: a pulsing
- * halo behind the single top-priority asset, plus one circular badge per
- * status (feat-034) -- each with its own glyph AND color, so status is
- * never communicated by ring color alone (color-blind-safe). */
-export function StatusIndicators({ asset, isTopPriority }: { asset: AssetOverview; isTopPriority: boolean }) {
+/**
+ * Farm-wide highest-priority asset. Severity-ranked with a health-score
+ * tie-break. Only ever one asset gets the spotlight halo.
+ */
+export function topPriorityAssetId(assets: Asset[]): string | null {
+  if (assets.length === 0) return null
+  const sorted = [...assets].sort((a, b) => {
+    const rank = SEVERITY_RANK[b.status] - SEVERITY_RANK[a.status]
+    if (rank !== 0) return rank
+    return a.health_score - b.health_score
+  })
+  // Don't spotlight a fully healthy farm.
+  return sorted[0].status === "healthy" ? null : sorted[0].id
+}
+
+/**
+ * Status badge distinguishable WITHOUT color (feat-034, color-blind safe):
+ * a bouncing "!" for critical, an amber warning triangle for needs_attention,
+ * a green check for healthy.
+ */
+export function StatusBadge({ status }: { status: AssetStatus }) {
+  if (status === "critical") {
+    return (
+      <span
+        className="flex size-5 items-center justify-center rounded-full bg-critical text-critical-foreground shadow-md ring-2 ring-card"
+        style={{ animation: "marker-bounce 0.9s ease-in-out infinite" }}
+        aria-hidden="true"
+      >
+        <span className="text-xs font-black leading-none">!</span>
+      </span>
+    )
+  }
+  if (status === "needs_attention") {
+    return (
+      <span
+        className="flex size-5 items-center justify-center rounded-full bg-warning text-warning-foreground shadow-md ring-2 ring-card"
+        aria-hidden="true"
+      >
+        <AlertTriangle className="size-3" />
+      </span>
+    )
+  }
   return (
-    <>
-      {isTopPriority && (
-        <div
-          className="absolute inset-0 -z-10 animate-[spotlight-pulse_2s_ease-in-out_infinite] rounded-full bg-red-400 blur-md dark:bg-red-500"
-          aria-hidden
-        />
-      )}
+    <span
+      className="flex size-5 items-center justify-center rounded-full bg-healthy text-healthy-foreground shadow-md ring-2 ring-card"
+      aria-hidden="true"
+    >
+      <Check className="size-3" strokeWidth={3} />
+    </span>
+  )
+}
 
-      {asset.status === "critical" && (
-        <span
-          className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 animate-[badge-bounce_1.2s_ease-in-out_infinite] items-center justify-center rounded-full bg-red-600 text-[11px] font-bold text-white shadow-md"
-          aria-hidden
-        >
-          !
-        </span>
-      )}
-
-      {asset.status === "needs_attention" && (
-        <span
-          className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 animate-[attention-pulse_2.5s_ease-in-out_infinite] items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white shadow-md"
-          aria-hidden
-        >
-          ▲
-        </span>
-      )}
-
-      {asset.status === "healthy" && (
-        <span
-          className="absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 animate-[sparkle-fade_3s_ease-in-out_infinite] items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white shadow-md"
-          aria-hidden
-        >
-          ✓
-        </span>
-      )}
-    </>
-  );
+export function ringColor(status: AssetStatus): string {
+  if (status === "critical") return "var(--critical)"
+  if (status === "needs_attention") return "var(--warning)"
+  return "var(--healthy)"
 }

@@ -1,7 +1,5 @@
-"use client";
+import { SplitFarmView } from "@/components/SplitFarmView"
 
-import { SplitFarmView } from "@/components/SplitFarmView";
-
-export default function Home() {
-  return <SplitFarmView initialAssetId={null} />;
+export default function HomePage() {
+  return <SplitFarmView />
 }

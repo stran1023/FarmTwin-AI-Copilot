@@ -1,9 +1,6 @@
-"use client";
+import { SplitFarmView } from "@/components/SplitFarmView"
 
-import { useParams } from "next/navigation";
-import { SplitFarmView } from "@/components/SplitFarmView";
-
-export default function AssetDetailRoute() {
-  const params = useParams<{ id: string }>();
-  return <SplitFarmView initialAssetId={params.id} />;
+export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return <SplitFarmView initialAssetId={id} />
 }

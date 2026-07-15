@@ -2,7 +2,49 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-07-15
+- Last Updated: 2026-07-16
+- **Session 025 (2026-07-16): fixed the second narration-leak shape
+  Session 024 had flagged.** `backend/app/main.py`'s
+  `_strip_narration_prefix` was rewritten from a prefix-only phrase
+  match into a content classifier (`_looks_like_narration`): first-
+  person process language, references to "the user"/"my filter", or a
+  leaked raw snake_case field name (e.g. `approved_at`), scanned across
+  a bounded window of the first 4 sentences and cutting at the LAST
+  match in that window (not just the first non-matching sentence) --
+  necessary because a plain-looking sentence can sit between two
+  narration sentences. Verified against 3 freshly-captured live raw
+  Cortex Agent samples, a faithful reconstruction of the reported leak,
+  idempotency against 3 real already-clean captured answers, and one
+  final live `/briefing/today` call. See `feat-042`.
+- **Session 024 (2026-07-16): redesigned the Daily Briefing Overview
+  card** per a detailed user-supplied rendering/UI brief (explicitly
+  scoped to rendering, not content generation). New
+  `frontend/lib/markdown.tsx` (bold-only markdown render + sentence
+  splitter) and `frontend/components/BriefingOverview.tsx` (a real-data
+  badge banner for the primary affected asset + sentence-paragraph prose
+  + a separated "rest of the farm" strip). See `feat-041`. Verification
+  surfaced a *second*, different narration-leak shape (not glued, no
+  recognized lead-in phrase) in a separate live Cortex Agent call --
+  flagged, not fixed (out of this session's declared scope).
+- **Session 023 (2026-07-16): fixed the narration-leak bug Session 022
+  had flagged but left out of scope.** The user reported it live (a
+  leaked "Only one recommendation matched today's date exactly. Let me
+  broaden..." preamble ahead of the real Daily Briefing summary).
+  `backend/app/main.py`'s `_clean_agent_answer`/`_strip_narration_prefix`
+  now strips narration at the last "glued" punctuation-to-capital seam
+  (no space after `.`/`!`/`?`) rather than only matching known lead-in
+  phrases -- a more general fix than the phrase-list approach used in
+  Sessions 011-014. See `feat-040`.
+- **Session 022 (2026-07-16): the frontend was fully replaced.** The user
+  supplied a separately-built, v0-generated Next.js frontend
+  (`farmtwin-ai-copilot-frontend/` -- shadcn/ui, pan/zoom digital twin
+  map, dedicated `/copilot` route) and asked for it to be integrated with
+  the real backend. Per explicit user decision, the old `frontend/` was
+  removed entirely and the new project moved into its place; package
+  manager switched pnpm -> npm to match the rest of the repo. See
+  `feat-039` in `feature_list.json` and the Session 022 entry below for
+  full detail -- `docs/frontend-architecture.md` (written in Session 021)
+  now describes the **removed** frontend and needs a rewrite.
 - Repository root: `D:\Snowflake Hackathon\climate-agriculture-copilot`
 - Current Objective: **Project pivoted 2026-07-14** to `docs/FarmTwin-AI-Copilot.md`
   (single farm, 4 heterogeneous Farm Assets — Fish Pond/Chicken Coop/Rice
@@ -1090,6 +1132,408 @@
   rule for shipped application code; this is test tooling only, same as
   every prior session's Playwright-based verification.
 - Not yet pushed to `origin/main` — awaiting an explicit push request.
+
+## Session 022 — swap in the v0-generated frontend redesign, wire to the real backend
+
+- Date: 2026-07-16
+- Goal: the user supplied a separately-built Next.js frontend at
+  `farmtwin-ai-copilot-frontend/` (v0.app-generated: shadcn/ui, a
+  pan/zoom digital twin map, dedicated `/copilot` route) and asked for it
+  to be integrated with the real FastAPI backend. It shipped wired only
+  to an in-memory `lib/mockData.ts`, with its own `lib/types.ts` contract
+  that does not match `backend/app/models/schemas.py` field-for-field
+  (e.g. `asset.id` vs `asset_id`, `confidence` 0-1 vs `confidence_pct`
+  0-100, `growth_stage` as a 0-4 index vs the backend's string enum,
+  `Task`/`Alert`/`Weather` shapes with no backend equivalent).
+- Before writing any code, read the entire new frontend (`app/`,
+  `components/`, `lib/`) end to end and cross-referenced every field
+  against the real backend contract (re-derived from the old, still
+  passing, `frontend/lib/api.ts` and `backend/app/models/schemas.py` /
+  `backend/app/main.py`) to design a mapping layer rather than guessing.
+  Confirmed via grep that no component hardcodes a mock asset id, so a
+  pure `lib/api.ts` rewrite (no component changes needed) was safe.
+- Asked the user two `AskUserQuestion`s before touching anything
+  destructive, since this meant deleting the old, fully-`passing`
+  `frontend/` directory: (1) replace `frontend/` entirely vs. run both
+  side by side — user chose **replace entirely**; (2) the new project
+  shipped with `pnpm-lock.yaml` while this repo's docs/precedent use
+  npm — user chose **switch to npm**.
+- Implemented:
+  - Confirmed `git status` was clean under `frontend/` before removing
+    it (`git rm -rq frontend`), then moved
+    `farmtwin-ai-copilot-frontend/` into its place. (First attempt
+    nested the new content one level too deep because `git rm` doesn't
+    remove gitignored leftovers like `node_modules/`/`.next/`, which
+    left the target directory non-empty for `mv` — caught immediately
+    and corrected.) Removed the stale old `node_modules/`/`.next/`;
+    kept the old `.env.local` (`NEXT_PUBLIC_API_URL=http://localhost:8000`),
+    already exactly correct. Removed `pnpm-lock.yaml`, ran `npm install`,
+    set `package.json`'s `name` back to `"frontend"`.
+  - Rewrote `frontend/lib/api.ts` in full: every function now calls the
+    real backend (`fetch` against `backend/app/main.py`'s endpoints)
+    instead of `lib/mockData.ts`, through a mapping layer that converts
+    each backend response shape onto the new frontend's own
+    `lib/types.ts` contract -- `growth_stage` string -> 0-4 index
+    (matching `asset_simulator.py`'s `GROWTH_STAGES` order exactly),
+    `confidence_pct / 100`, `pending_approval` -> `pending`, a
+    module-level asset-name cache (several backend endpoints return a
+    recommendation/alert keyed only by `asset_id`, with no name
+    attached), and per-reading `tone` coloring mirrored from
+    `backend/app/services/risk_engine.py`'s own real thresholds (DO
+    <3.5/<6.0, feed <15%, soil moisture <30%/>90%, disease >20%/>40%,
+    etc.) rather than an invented judgment call. "Today's tasks" on the
+    asset detail panel is built from that asset's pending
+    recommendations (already filtered server-side to
+    `pending_approval` by `/assets/{id}/recommendations`), matching
+    `docs/ui-build-plan.md` Screen 3's original spec exactly. Deleted
+    the now-dead `lib/mockData.ts`.
+  - Deleted the old `frontend/components/AssetDetailPanel.tsx`'s
+    `READING_FIELDS_BY_TYPE` table by way of reference (read it before
+    the directory was removed) so the new `api.ts`'s per-type reading
+    fields carry forward `feat-017`'s Session 012 field-correctness fix
+    exactly, rather than re-deriving it from scratch.
+- Verified (build/type/lint, then live runtime against the real
+  backend + live Snowflake account -- not just a clean build):
+  - `npm run build` passed, but `next.config.mjs` has
+    `typescript: { ignoreBuildErrors: true }` (carried over from the v0
+    export), which would silently hide real type errors -- ran
+    `npx tsc --noEmit` directly instead of trusting the build. Found
+    and fixed one real pre-existing type error unrelated to the api.ts
+    rewrite (`components/BriefingView.tsx`: `{error && (...)}` where
+    `error` is typed `unknown`, not narrowable to a renderable boolean
+    -- fixed with `Boolean(error)`).
+  - `npm run lint` initially failed with "'eslint' is not recognized"
+    -- the v0 export has no ESLint installed or configured at all (no
+    `eslint.config.mjs`, no eslint deps), so `npm run lint` had never
+    actually run even before this session's changes. Recovered the old
+    frontend's `eslint.config.mjs` via `git show HEAD:frontend/
+    eslint.config.mjs` before it was gone, installed
+    `eslint`/`eslint-config-next`, and got a real lint pass running for
+    the first time on this codebase. That surfaced 4 real, pre-existing
+    problems in the v0-generated components (none introduced by the
+    api.ts rewrite): a `react-hooks/purity` error in `CopilotPanel.tsx`
+    (`Date.now()` used for message ids -- fixed with a ref-based
+    counter), two `react-hooks/set-state-in-effect` errors
+    (`HealthGauge.tsx`, `WeatherAmbience.tsx` -- fixed with the same
+    microtask-deferred-setState pattern `lib/useApiData.ts` already
+    established), and one unused-variable warning (`DashboardPanel.tsx`'s
+    dead `STATUS_TEXT` -- deleted). `npx tsc --noEmit` and `npm run
+    lint` both clean after.
+  - Started the real backend (`backend/venv`, live Snowflake account)
+    and `npm run dev`, then ran a fresh Playwright install into the
+    session scratchpad (not a project dependency) for live verification,
+    matching this repo's established pattern:
+    - `/`: 4 real asset markers rendered (`CC-001`/`FO-001`/`FP-001`/
+      `RF-001`), dashboard showed the real farm health score (70) and 1
+      real active alert.
+    - Clicking Tilapia Pond A opened real sensor readings, a real
+      Critical risk badge, and a real dissolved-oxygen value.
+    - **Found and fixed a real bug live**: clicking a recommendation
+      card on the dashboard threw a hydration/HTML-validity error --
+      `DashboardPanel.tsx` wrapped each shared `RecommendationCard` in
+      an outer `<button>`, but `RecommendationCard` itself renders its
+      own `<button>`s (the "View details" toggle, Approve/Reject) --
+      invalid nested-button HTML. Fixed by changing the outer wrapper
+      to a `role="button"` `<div>` with keyboard support, and adding
+      `e.stopPropagation()` to `RecommendationCard`'s internal buttons
+      so clicking them doesn't also trigger the outer row's navigation.
+    - **Found and fixed a second, subtler real bug live**: even after
+      the button-nesting fix, a hydration mismatch still intermittently
+      appeared on direct loads of `/assets/{id}` (reproduced 1-in-a-few
+      reloads) -- traced to `lib/useApiData.ts` passing the same
+      `getSnapshot` function as both the client-side AND server-side
+      snapshot argument to `useSyncExternalStore`. `dataCache.ts`'s
+      store is a module-level singleton that persists across requests
+      within the same long-running Next dev server process, so SSR
+      could read a stale value left over from a *previous* request,
+      while the client's genuine first render (before its own fetch
+      resolves) is always `undefined` -- a real mismatch, not a
+      Playwright/timing artifact. Fixed by making the server snapshot
+      always return `undefined`. Re-verified with 5 repeated fresh
+      browser-context reloads of `/assets/FP-001` specifically:
+      0 console/page errors on all 5, versus the intermittent failures
+      before the fix.
+    - Approved a real, live FP-001 recommendation through the UI (View
+      details -> Approve) and cross-checked directly against
+      `GET /assets/FP-001/recommendations`: pending count dropped
+      13 -> 12, confirming a genuine Snowflake write-back through the
+      new frontend, not a UI-only state change.
+    - `/briefing` loaded in 40.2s (a real live Cortex Agent call, not
+      cached) with a real generated summary citing exact real data (DO
+      3.1 -> 2.0 mg/L across specific dates, the Q4-2024 crash
+      cross-reference). One early check timed out at a too-short wait
+      and looked like a hang -- re-ran with a realistic ~150s timeout
+      per this repo's own documented Cortex Agent latency
+      (60-150s/call) and got a clean real result; a test-timing false
+      alarm, not an app bug, same category as prior sessions' findings.
+    - `/copilot` answered a real free-form question ("Should I feed the
+      fish?") in 37.5s with a real grounded "No", citing the live 2.0
+      mg/L DO reading and 33.4°C water temperature -- not a canned
+      string (the mock's `answerCopilot()` function no longer exists).
+    - Zero console/page errors across every one of the above checks.
+      Stopped the backend and `next dev` processes cleanly after
+      verification.
+  - `feat-039` recorded in `feature_list.json` with the full evidence
+    trail above.
+- Known, not fixed this session (out of scope -- pre-existing, backend-
+  side, unrelated to the frontend swap itself): the live `/briefing`
+  summary contained one leaked agent-planning sentence ("Let me broaden
+  to recent days to ensure I capture...") -- the same class of
+  narration-leak issue `backend/app/main.py`'s `_clean_agent_answer`/
+  `_strip_narration_prefix` has repeatedly needed extending for (see
+  Sessions 011-014 above); this is a new, unhandled phrasing shape, a
+  backend fix, not a frontend integration bug. Flagged to the user,
+  not fixed, per this repo's stay-in-scope rule.
+- Files updated: `frontend/` replaced wholesale (old directory removed,
+  new project moved in); within it: `lib/api.ts` (rewritten),
+  `lib/useApiData.ts`, `components/DashboardPanel.tsx`,
+  `components/RecommendationCard.tsx`, `components/BriefingView.tsx`,
+  `components/HealthGauge.tsx`, `components/WeatherAmbience.tsx`,
+  `components/CopilotPanel.tsx`, `package.json`, `eslint.config.mjs`
+  (new), `pnpm-lock.yaml` (removed), `lib/mockData.ts` (removed).
+  `feature_list.json`, `progress.md` updated.
+- `docs/frontend-architecture.md` (written in Session 021 for the now-
+  removed old frontend) was rewritten later in this same session to
+  describe the new frontend -- see the doc itself for the full as-built
+  writeup, including the same known issues list captured in the evidence
+  above. `frontend/README.md` was also written (it had none before).
+- Next best step: no unfinished feature was queued at the end of this
+  session -- see Session 023 below for what came next.
+
+## Session 023 — fix a new Cortex Agent narration-leak shape (feat-040)
+
+- Date: 2026-07-16
+- Goal: the user pasted a live, broken Daily Briefing overview directly
+  into chat: a leaked agent-planning preamble ("Only one recommendation
+  matched today's date exactly. Let me broaden to recent recommendations
+  with approved/rejected statuses to ensure I capture all of \"today's\"
+  decisions, and pull the driving risks.") glued directly ahead of the
+  real summary text, with no separating space
+  ("...risks.Today's recommendation activity..."). This is exactly the
+  known, out-of-scope issue flagged (not fixed) at the end of Session
+  022 -- the user hit it live before it was addressed.
+- Root cause: `backend/app/main.py`'s `_strip_narration_prefix` only
+  stripped narration whose first sentence began with one of a fixed list
+  of lead-in phrases (`"I'll "`, `"Let me "`, ...) -- extended
+  repeatedly across Sessions 011-014 as new phrasings appeared. This
+  narration's opening sentence ("Only one recommendation matched...")
+  didn't match any of them, so the whole function was a no-op here, even
+  though a second, later sentence in the same narration block did start
+  with "Let me ".
+- Implemented a more general fix in `backend/app/main.py`: added
+  `_strip_glued_narration()`, using the observation (consistent across
+  every narration-leak shape documented in this repo's history, going
+  back to Session 011) that the actual narration/answer seam is always a
+  sentence-ending punctuation mark immediately followed by a capital
+  letter or markdown bold marker with **no space** -- real prose always
+  has a space there. Cuts at the *last* such seam (since narration
+  itself can span multiple normally-spaced sentences before the final
+  glued handoff into the real answer), and requires the punctuation be
+  followed by `[A-Z*]` specifically (not a digit), so it never fires on
+  a decimal number like "3.5". Wired into `_clean_agent_answer()` ahead
+  of the existing phrase-based `_strip_narration_prefix()`, which is
+  kept as a fallback for narration that survives with normal spacing
+  throughout.
+- Verified:
+  - `python -m compileall app` — clean.
+  - Wrote a scripted regression test (scratchpad, not committed) calling
+    `_clean_agent_answer()` directly against 6 cases: (1) the exact
+    reported leaked text -- correctly stripped down to "Today's
+    recommendation activity is entirely concentrated on..."; (2) the
+    `<answer>`-tag shape; (3) narration-into-heading; (4) a properly-
+    spaced lead-in-phrase narration ("I have the data model. Let me
+    pull..." -- the exact feat-014 shape); (5) a decimal-number sentence
+    (negative case -- must be untouched); (6) already-clean text
+    (negative case). All 6 passed, confirming the new heuristic fixes
+    the reported bug with zero regressions against every previously-
+    documented shape.
+  - Live verification (not just the scripted test): started `uvicorn`
+    against the live Snowflake account, called `GET /briefing/today` for
+    real (34.5s, a genuine Cortex Agent call, not cached). The real
+    response's summary began cleanly: "Every approved and rejected
+    recommendation across the farm today concerns a single asset —
+    **Tilapia Pond A (FP-001)**..." -- zero leaked narration, confirming
+    the fix holds against genuine live agent output. Stopped `uvicorn`
+    cleanly after verification.
+- Result: `feat-040` added directly as `passing` in `feature_list.json`
+  with the above evidence (this was a direct bug-fix request, not
+  planned roadmap work, so it was implemented and verified in one pass
+  rather than staged through `not_started`/`in_progress`).
+- Files updated: `backend/app/main.py`, `feature_list.json`,
+  `progress.md`.
+- Note: `_clean_agent_answer()` is shared by `/workflow/run`'s
+  recommendation summaries, `/briefing/today`, and `POST /copilot/ask`
+  -- this fix applies to all three call sites, not just the briefing
+  screen where it was reported.
+- Next best step: none queued -- ask the user what to prioritize next.
+
+## Session 024 — redesign the Daily Briefing Overview card (feat-041)
+
+- Date: 2026-07-16
+- Goal: the user supplied a detailed rendering/UI design brief for the
+  Overview card, explicitly scoped to rendering only ("improve the
+  rendering/UI, not the content generation"): render `**bold**` as real
+  bold, break the single wall-of-text paragraph into short scannable
+  paragraphs, ~1.6-1.8 line height, a constrained line length, sparing
+  and *real* (not invented) badges for priority/status/confidence/risk,
+  visual separation between the primary incident and the rest of the
+  farm, and a clean dashboard aesthetic.
+- Implemented:
+  - `frontend/lib/markdown.tsx` (new): `renderInlineMarkdown()` -- a
+    bold-only markdown renderer (splits on `**...**`, no new dependency,
+    matches this repo's established minimal-dependency bias; the agent
+    never emits headings/lists/links in this context, so a full
+    markdown library isn't warranted) -- and `splitIntoSentences()`, a
+    sentence-boundary regex requiring whitespace before the next capital
+    letter or bold marker, so it never splits mid-decimal (e.g. "3.5
+    mg/L" stays intact) while still splitting cleanly at real sentence
+    boundaries. Verified by hand against 2 real captured summaries that
+    this naturally produces sensible paragraph-per-logical-unit breaks
+    (main incident / approved actions / rejected items / risk context)
+    without needing to parse the content itself.
+  - `frontend/components/BriefingOverview.tsx` (new): derives a
+    "primary asset" from the real `Briefing.decisions` array (the
+    asset_id referenced by the most decisions, not parsed out of the
+    prose) and renders a badge banner above the prose -- the asset's
+    real current `RiskBadge` status (via a newly-added `getAssets()`
+    fetch sharing the app's existing `"assets"` cache key, so this is a
+    free cache hit if the user already visited the Farm view this
+    session), a real `PriorityBadge`, a real confidence-percent chip,
+    and real approved/rejected count chips. Below that, the summary
+    prose renders one short paragraph per sentence (via
+    `splitIntoSentences`) with real bold text (via
+    `renderInlineMarkdown`), `leading-[1.7]` and a `max-w-[68ch]`
+    constraint. Below that, a visually separate "Rest of the farm" strip
+    shows every other real asset as a small status dot-chip (reusing the
+    same colored-dot visual language `DigitalTwinMap.tsx`'s legend
+    already established elsewhere in the app).
+  - `frontend/components/BriefingView.tsx`: now also fetches
+    `getAssets()` and passes both `briefing` and `assets` into the new
+    `BriefingOverview`, replacing the old single `<p>{briefing.summary}</p>`.
+- Verified:
+  - `npx tsc --noEmit`, `npm run lint`, `npm run build`: all clean.
+  - Live Playwright, real backend + live Snowflake account + real Cortex
+    Agent (not mocked): loaded `/briefing` (40.7s, a genuine live
+    `/briefing/today` call). Confirmed zero occurrences of raw `**` in
+    the page text; the Overview card rendered 6 real `<p>` paragraphs
+    and 2 real `<strong>` elements; a "% confidence" chip, an
+    "approved"/"rejected" chip, and the "Rest of the farm" section were
+    all present; zero console/page errors.
+  - Screenshots at 1280px (desktop) and 820px (tablet) viewports: badge
+    banner showed "Tilapia Pond A", a red "Critical" risk badge, a
+    "High priority" badge, "96% confidence", and "1 approved" -- an
+    exact real-data match for the kind of badges the design brief asked
+    for (High Priority / Approved / Confidence / Critical Risk). 6-8
+    short, well-spaced, readable paragraphs at both widths, with real
+    bold rendering (e.g. "**rejected**" rendered as actual bold text,
+    confirmed visually, not literal asterisks). The "Rest of the farm"
+    strip correctly listed the other 3 real assets (Layer House North,
+    Mango Grove West, Paddy Block East) as status dot-chips, reflowing
+    correctly at both widths.
+  - Stopped `uvicorn`/`next dev` cleanly after verification.
+- Found, not fixed (explicitly out of this session's scope): the second
+  live `/briefing/today` call used for the tablet screenshot happened to
+  contain a *different* narration-leak shape than the one fixed in
+  Session 023's `feat-040` -- properly-spaced sentences ("Filtering to
+  items actually approved/rejected today... so I'll summarize the
+  decisions made in this active FP-001 crisis window.") that don't
+  start with a recognized lead-in phrase and aren't glued to the next
+  sentence, so neither of `_clean_agent_answer`'s current heuristics
+  catches them. This is a content-generation-cleaning issue
+  (`backend/app/main.py`), not a rendering bug -- the redesigned card
+  still rendered that leaked text as clean, readable paragraphs,
+  confirming the rendering fix itself is correct independent of input
+  quality. Flagged to the user as a candidate follow-up, not actioned,
+  since this session's task was explicitly rendering-only.
+- Result: `feat-041` added directly as `passing` in `feature_list.json`.
+- Files updated: `frontend/lib/markdown.tsx` (new),
+  `frontend/components/BriefingOverview.tsx` (new),
+  `frontend/components/BriefingView.tsx`, `feature_list.json`,
+  `progress.md`.
+- Next best step: none queued -- ask the user what to prioritize next.
+  If continuing: fix the newly-found second narration-leak shape
+  (backend), or extend `renderInlineMarkdown`/similar treatment to
+  `CopilotPanel.tsx`'s chat messages and the Decision Log's
+  recommendation text, both of which render raw Cortex Agent text
+  without markdown parsing today (same latent issue class, not yet
+  reported by the user or fixed).
+
+## Session 025 — fix the second (non-glued) narration-leak shape (feat-042)
+
+- Date: 2026-07-16
+- Goal: the user asked to fix the second narration-leak shape flagged
+  (not fixed) at the end of Session 024 -- some raw Cortex Agent
+  responses have no glued (no-space) boundary anywhere, so `feat-040`'s
+  fix has nothing to cut at, and the leading narration sentences don't
+  necessarily start with a recognized lead-in phrase either.
+- Before writing a fix, captured 3 fresh *raw* (uncleaned)
+  `cortex_agent_client.ask_agent()` responses directly, using
+  `/briefing/today`'s exact prompt, to study real narration shapes
+  instead of guessing from the one rendered example available. All 3
+  turned out to already be glued (i.e. already handled by `feat-040`) --
+  useful negative-confirmation, but didn't reproduce the reported second
+  shape on its own. Reconstructed that shape faithfully from the
+  originally-reported rendered text instead (Session 024's tablet
+  screenshot): "Every decided recommendation belongs to Tilapia Pond A
+  (FP-001). Filtering to items actually approved/rejected *today*
+  (approved_at on 2026-07-15) yields the single approved item; but the
+  user asked about \"today's\" decisions broadly, so I'll summarize the
+  decisions made in this active FP-001 crisis window. All approved and
+  rejected recommendations today concern..." -- every sentence break
+  here is a normal, properly-spaced one.
+- Implemented in `backend/app/main.py`: replaced the old prefix-only
+  phrase list (`_NARRATION_LEAD_INS`, matched only against the very
+  start of the remaining text) with a content classifier,
+  `_looks_like_narration(sentence)`: true if the sentence uses first-
+  person process language (`I'll`/`I will`/`I'm going to`/`Let me`/
+  `Let's`/`I have`/`I've`), references `"the user"`/`"my filter"`/
+  `"my query"`, describes a filtering/querying step, or contains a raw
+  snake_case field name (e.g. `approved_at`) -- a Snowflake column name
+  leaking through, something genuine natural-language farm advice never
+  does.
+  - First attempt: stop stripping at the first sentence that doesn't
+    match. **Failed** against the reconstructed case -- its first
+    sentence ("Every decided recommendation belongs to...") reads as
+    plausible content and doesn't itself trip any signal, even though
+    the second sentence clearly is narration, so the loop gave up
+    immediately without stripping anything.
+  - Fix: scan a bounded window of the first 4 sentences (narration has
+    only ever been observed as 1-2 sentences across every real sample
+    in this project) and cut everything up to and including the LAST
+    matching sentence in that window -- the same "cut at the last
+    match" strategy `feat-040`'s glued-boundary fix already uses,
+    applied to content signals instead of typography. This correctly
+    carries along a plain-looking sentence sandwiched between two
+    narration sentences.
+- Verified:
+  - `python -m compileall app` -- clean.
+  - Scripted regression test (scratchpad, not committed), 10 cases: the
+    original `feat-040` glued bug, the reconstructed second shape (now
+    correctly stripped down to "All approved and rejected
+    recommendations today concern..."), all 3 freshly-captured live raw
+    samples (still handled correctly -- no regression), the
+    `<answer>`-tag and heading shapes, a decimal-number negative case, an
+    already-clean negative case, and a "filtration" negative case
+    (confirms `"filtering to/for"` doesn't over-match unrelated real
+    vocabulary like "mechanical filtration system") -- all 10 passed.
+  - Separate idempotency test: 3 real, already-clean answers captured
+    live in earlier sessions (a copilot "should I feed the fish" answer,
+    a real briefing summary, a copilot multi-asset triage answer) all
+    passed through `_clean_agent_answer` completely unchanged --
+    confirms the new classifier doesn't false-positive on genuine
+    multi-sentence prose.
+  - Live verification: started `uvicorn` against the live Snowflake
+    account, called `GET /briefing/today` for real (29.8s, a genuine
+    Cortex Agent call). Real response summary began cleanly: "Today's
+    activity is dominated entirely by **Tilapia Pond A (FP-001)**..." --
+    zero leaked narration. Stopped `uvicorn` cleanly after verification.
+- Result: `feat-042` added directly as `passing` in `feature_list.json`.
+- Files updated: `backend/app/main.py`, `feature_list.json`,
+  `progress.md`.
+- Next best step: none queued -- ask the user what to prioritize next.
+  The other item flagged in Session 024 (raw-markdown rendering in
+  `CopilotPanel.tsx`'s chat messages and the Decision Log's
+  recommendation text) remains unactioned.
 
 ## Legacy: rice-cooperative build (superseded 2026-07-14)
 
