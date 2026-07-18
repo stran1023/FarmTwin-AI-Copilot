@@ -3,6 +3,76 @@
 ## Current Verified State
 
 - Last Updated: 2026-07-19
+- **Session 028 (2026-07-19): built the automated test suites, a demo-reset
+  script, and drafted CoCo prompts for 2 blocked "strengthen the project"
+  items (`feat-049` through `feat-053`).** From a "what should we do to
+  strengthen the project" discussion, the user asked to automate down a
+  5-item prioritized list. Items #2/#3/#4 from that list (inventory-aware
+  recommendations, regulatory withdrawal checks, root-causing the
+  narration-leak whack-a-mole via agent instructions, and a second Cortex
+  Search Agent Skill) all require Snowflake/Cortex objects only the user
+  can create via CoCo (per `CLAUDE.md`) -- drafted those as new CoCo
+  prompts (`snowflake/coco-prompts.md` Part 4) and new blocked
+  `not_started` features (`feat-052`, `feat-053`; `feat-043`/`feat-044`
+  were already queued from an earlier session) rather than attempting them.
+  Fully implemented the 2 unblocked items:
+  - `feat-049` (backend pytest suite): `backend/tests/` -- 67 tests across
+    `test_risk_engine.py`, `test_recommendation_parser.py`,
+    `test_asset_simulator.py` (seeded-RNG), and `test_clean_agent_answer.py`
+    (a committed regression suite reconstructing every narration-leak shape
+    from Sessions 011-014/`feat-040`/`feat-042`, previously only ever
+    tested ad hoc). All 67 pass. Wired into `init.sh` (auto-skips
+    gracefully if `backend/venv` doesn't exist).
+  - `feat-050` (frontend Playwright e2e suite): `frontend/tests/e2e/` --
+    7 tests (`map.spec.ts`, `tasks-due-today.spec.ts`, `asset-detail.spec.ts`)
+    verifying the golden path against the real live backend + Snowflake
+    account, each fetching ground truth via the API rather than hardcoding
+    values. All 7 pass. Wired into `init.sh` (skips gracefully if
+    `frontend/node_modules` is missing or the backend isn't reachable at
+    `:8000`). Deliberately excluded an approve/reject test -- see
+    `feat-050`'s notes for why (it would mutate live demo data on every
+    automated run).
+  - `feat-051` (`scripts/reset_demo_state.py`): restores every `fish_pond`
+    asset to a fresh critical-DO reading + risk row, and clears only
+    `pending_approval` `RECOMMENDATIONS` (never touches decided history).
+    Verified via `--dry-run` against the real account only (found FP-001,
+    correctly counted 12 real pending recommendations) -- the real
+    destructive write path was deliberately not exercised this session, to
+    avoid mutating live demo data without being explicitly asked to. Not
+    wired into `init.sh` (opt-in admin tool, not routine verification).
+  - Ran the full `./init.sh` chain end-to-end (compileall + 67 backend
+    pytest + 7 frontend e2e) in one pass, all green.
+- **Session 027 (2026-07-19): scoped `feat-048` -- add Greenhouse (vegetables)
+  as a 5th real Farm Asset type -- in response to the user asking to "add
+  more assets to make the project more amazing and engaging."** Planning
+  only, no code changed. Used `AskUserQuestion` twice rather than guessing,
+  since this was a genuinely ambiguous, high-blast-radius request: first,
+  whether "assets" meant a new real Snowflake-backed asset type vs. more
+  decorative scenery (feat-032 already covers the latter) -- user chose a
+  new real asset type; second, which asset type -- user chose Greenhouse
+  over Beehives/Dairy barn. Read `asset_simulator.py`, `risk_engine.py`,
+  and the frontend's asset-type-keyed maps (`lib/types.ts`,
+  `DigitalTwinMap.tsx`, `AssetDetailPanel.tsx`, `MarkerFrame.tsx`/marker
+  components) to ground the design in the real per-type extension points
+  rather than inventing a shape from scratch. Design: reuses most of
+  `ASSET_READINGS`' existing columns (air_temp_c, humidity_pct,
+  soil_moisture_pct, growth_stage, disease_risk_pct, harvest_readiness_pct,
+  irrigation_status) and adds exactly one new column, `co2_ppm`, since CO2
+  is a real, distinct greenhouse signal none of the other 4 types track.
+  Seed data (drafted as a new, non-destructive Part 3 in
+  `snowflake/coco-prompts.md` -- `ALTER TABLE ... ADD COLUMN` + `INSERT`s
+  only, unlike Part 2's prompt 1 which dropped tables) gives the greenhouse
+  a compound-risk story (reduced ventilation -> humidity climbs and
+  co2_ppm depletes simultaneously -> disease risk climbs) landing it at
+  `needs_attention` severity specifically -- deliberately chosen because no
+  asset in the current live data has ever reached that state, so this will
+  be the first time `feat-034`'s amber warning-triangle badge is exercised
+  against real data rather than only verified statically against the
+  compiled bundle. Added `feat-048` to `feature_list.json` (`not_started`,
+  full backend+frontend extension points enumerated in its description)
+  and the Part 3 CoCo prompt draft. Same blocking pattern as
+  `feat-043`/`feat-044`: needs the user to run the CoCo prompt
+  interactively before backend work can start, per `CLAUDE.md`.
 - **Session 026 (2026-07-19), continued: Asset Detail cleanup (`feat-047`)
   -- removed the duplicate "Today's Tasks" card, collapsed History behind a
   header toggle.** Reading `lib/api.ts:392-397` confirmed `AssetDetail.tasks`
@@ -126,12 +196,14 @@
   new CoCo prompt (Snowflake schema: `INVENTORY` for feat-043,
   `WITHDRAWAL_RULES`/`TREATMENTS` for feat-044) that only the user can run
   interactively, per `CLAUDE.md`.
-- Highest-priority unfinished feature: `feat-043` or `feat-044` — both
-  ready to scope further/start once the user runs the needed CoCo prompt.
-- Blockers: `feat-043`/`feat-044` need their Snowflake objects created via
-  CoCo before backend work can start (see above).
-- Recommended Next Step: ask the user whether to draft the CoCo prompts
-  for `feat-043`/`feat-044` next, or prioritize something else.
+- Highest-priority unfinished feature: `feat-043`, `feat-044`, or `feat-048`
+  — all three ready to start once the user runs their respective needed
+  CoCo prompt.
+- Blockers: `feat-043`/`feat-044`/`feat-048` each need their own Snowflake
+  objects created/altered via CoCo before backend work can start (see
+  above; `feat-048`'s draft prompt is `snowflake/coco-prompts.md` Part 3).
+- Recommended Next Step: ask the user which of `feat-043`/`feat-044`/
+  `feat-048`'s CoCo prompts to run first.
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
 

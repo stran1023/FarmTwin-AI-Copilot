@@ -377,3 +377,207 @@ Result:
 
   The agent also correctly compared the current trajectory to the Q4-2024 historical crash (310 → 145 kg, ~53% loss) and avoided generic advice — every recommendation is
   tied to specific current readings or risk assessment notes.
+
+---
+
+## Part 3 — add Greenhouse as a 5th Farm Asset (drafted 2026-07-19, not yet run)
+
+Drafted for `feat-048` in `feature_list.json`. Unlike Part 2's prompt 1, **none
+of these are destructive** — this only `ALTER TABLE ... ADD COLUMN` (additive)
+and `INSERT`s new rows; the 4 existing assets and all their historical data
+are untouched. Review wording before running.
+
+### 1. Schema extension (feat-048)
+
+```
+Alter ASSET_READINGS in CLIMATE_AG_COPILOT.OPS to add one new nullable
+column: co2_ppm (CO2 concentration in parts per million). Do not modify or
+drop any existing column.
+```
+
+Result:
+
+### 2. Seed data (feat-048)
+
+```
+Insert one new FARM_ASSETS row: asset_id GH-001, asset_type greenhouse,
+name "Greenhouse A", install_date realistic, grid_x/grid_y a currently
+unused cell between 0-10 (check the 4 existing FARM_ASSETS rows first and
+avoid colliding with any of them).
+
+Generate 30 days of daily ASSET_READINGS for GH-001, populating only:
+air_temp_c, humidity_pct, soil_moisture_pct, co2_ppm, growth_stage,
+disease_risk_pct, harvest_readiness_pct, irrigation_status (leave every
+other column null, matching how the other 4 asset types already leave
+irrelevant columns null in this table). Typical healthy ranges: air_temp_c
+18-28C, humidity_pct 50-70%, co2_ppm 600-900ppm (elevated CO2 is
+deliberately maintained in a greenhouse for plant growth), disease_risk_pct
+5-15%. For the last 4 days, show a realistic compound stress pattern: the
+greenhouse's ventilation was reduced to conserve heat, so humidity climbs
+toward 85-90% AND co2_ppm drops toward 250-350ppm at the same time
+(plants consuming CO2 during daylight with no fresh-air exchange to
+replenish it), and disease_risk_pct climbs to 25-35% (humid, stagnant air
+raising fungal/powdery-mildew risk) -- a "needs_attention" severity, not a
+full critical crisis like the fish pond's. growth_stage should advance
+gradually across the 30 days (seedling toward vegetative/reproductive,
+consistent with the existing GROWTH_STAGES ordering already used for
+rice_field/fruit_orchard). irrigation_status should be "active"/"inactive"
+consistent with soil_moisture_pct the same way it already works for
+rice_field.
+
+Generate matching ASSET_RISK_ASSESSMENTS for GH-001: weekly during the
+healthy period, daily during the last 4 days as risk climbs from low to
+medium ("needs_attention"). Generate 3 prior periods of ASSET_HISTORY for
+GH-001 (vegetable yield in kg harvested per period), with one period
+showing a clear yield dip tied to a past pest or disease outbreak.
+```
+
+Result:
+
+### 3. Semantic view update (feat-048)
+
+```
+Extend the existing FARM_OPS_VIEW semantic view in CLIMATE_AG_COPILOT.OPS
+so it correctly includes the new GH-001 greenhouse asset and the new
+co2_ppm fact column from ASSET_READINGS, the same way it already covers
+the other 4 assets and their columns. Re-verify the existing onboarding
+queries ("which assets need attention today", "what is the current status
+of X", "how does this asset's recent history compare to a past risk
+event") still work and now correctly surface GH-001 when relevant.
+```
+
+Result:
+
+### 4. Cortex Agent update (feat-048)
+
+```
+Update the FARM_OPS_AGENT's orchestration instructions in
+CLIMATE_AG_COPILOT.OPS to add greenhouse-specific thresholds: co2_ppm
+below 400ppm during the day = stress (ventilation/CO2 enrichment needed),
+humidity_pct above 80% combined with disease_risk_pct above 20% = elevated
+fungal-disease risk requiring ventilation action, disease_risk_pct above
+40% = critical. Keep every existing threshold for the other 4 asset types
+unchanged. The agent should still produce the same 6-field recommendation
+format (Recommendation/Reason/Evidence/Priority/Expected Impact/
+Confidence) for the greenhouse, grounded in its real current data.
+```
+
+Result:
+
+### 5. Verification (feat-048)
+
+```
+Verify in Snowsight (or via CoCo):
+
+SELECT COUNT(*) FROM CLIMATE_AG_COPILOT.OPS.FARM_ASSETS;  -- expect 5
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.ASSET_READINGS WHERE asset_id = 'GH-001' ORDER BY ts DESC LIMIT 5;
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.ASSET_RISK_ASSESSMENTS WHERE asset_id = 'GH-001' ORDER BY ts DESC LIMIT 5;
+
+Ask the agent a test question about the greenhouse specifically (e.g.
+"what's the status of Greenhouse A") in the Cortex Agent playground (or
+via CoCo) and confirm it returns a real, data-grounded answer citing the
+actual co2_ppm/humidity_pct/disease_risk_pct values, not a generic or
+empty response.
+```
+
+Result:
+
+---
+
+## Part 4 — root-cause fix for narration leaks + a second Agent Skill (drafted 2026-07-19, not yet run)
+
+Drafted for `feat-052`/`feat-053` in `feature_list.json`, from a 2026-07-19
+"what should we do to strengthen the project" discussion. Neither prompt is
+destructive (an agent-instruction update and a new table + search service);
+review wording before running.
+
+### 1. Tighten FARM_OPS_AGENT's response contract to stop narration leaks at the source (feat-052)
+
+`backend/app/main.py`'s `_clean_agent_answer` has now been extended 4
+separate times (Sessions 011-014, `feat-040`, `feat-042`) to strip a new
+shape of leaked tool-planning narration ahead of the real answer -- each
+fix closed one observed shape, and a new one kept appearing. That's a sign
+the fix belongs upstream, in the agent's own instructions, not in another
+backend regex.
+
+```
+Update FARM_OPS_AGENT's response instructions in CLIMATE_AG_COPILOT.OPS so
+the agent ALWAYS wraps its final user-facing answer in explicit <answer>
+and </answer> tags, with zero exceptions. ALL tool-call planning,
+reasoning-out-loud about what to query/filter/summarize, or any other
+narration must come strictly BEFORE the opening <answer> tag -- never
+inside it, never after the closing tag. The content between <answer> and
+</answer> must be pure natural-language farm advice: no references to
+"the user", "my query", "my filter", no description of a filtering/
+querying step, and no raw database/column names (e.g. approved_at,
+asset_id). Test this by asking the agent at least 4 different real
+questions (a daily briefing-style summary, a specific single-asset status
+question, a broad "what should I do today" question, and a question about
+a recently-decided recommendation) and confirm every single response has
+both tags present with clean content between them and zero narration
+leaking outside the tags.
+```
+
+Result:
+
+### 2. Verification (feat-052)
+
+```
+Ask the agent the same 4 test questions from prompt 1 again, a second
+time, to confirm the <answer>-tag discipline holds consistently rather
+than being a one-off in the playground. Paste 2-3 full raw responses here
+(including anything before the <answer> tag) so it's clear what the
+agent's actual raw output shape looks like now.
+```
+
+Result:
+
+### 3. Cortex Search over agronomy/veterinary notes -- a second, distinct Agent Skill (feat-053)
+
+FARM_OPS_AGENT currently has exactly one tool, `query_farm_ops`, a
+`cortex_analyst_text_to_sql` tool over structured live data. This adds a
+genuinely different kind of tool -- semantic retrieval over unstructured
+best-practice knowledge -- rather than a second structured lookup, and
+was originally scoped as an "optional stretch" in `snowflake/README.md`.
+
+```
+Create a new table AGRONOMY_NOTES (note_id, asset_type, title, body, tags,
+created_at) in CLIMATE_AG_COPILOT.OPS. Populate it with 15-20 realistic
+agronomy/veterinary best-practice notes relevant to this farm's 4 asset
+types: fish pond dissolved-oxygen and water-quality management, chicken
+coop heat stress and biosecurity, rice field irrigation and nutrient
+management, fruit orchard disease prevention. These should be general
+knowledge-base guidance (the kind a farm manager's reference handbook
+would contain), not asset-specific event logs -- ASSET_HISTORY already
+covers this farm's own past events, so avoid duplicating that content
+here. Then create a Cortex Search service over AGRONOMY_NOTES's body
+column (with asset_type/title/tags as searchable attributes), and add it
+as a second tool on FARM_OPS_AGENT alongside the existing query_farm_ops
+tool. Update the agent's orchestration instructions so it knows to use
+this second tool for retrieving general best-practice guidance, in
+addition to querying this farm's own live structured data with the first
+tool -- and to cite which kind of source (live data vs. best-practice
+note) each part of its answer is grounded in.
+```
+
+Result:
+
+### 4. Verification (feat-053)
+
+```
+Verify in Snowsight (or via CoCo):
+
+SELECT COUNT(*) FROM CLIMATE_AG_COPILOT.OPS.AGRONOMY_NOTES;  -- expect 15-20
+
+Ask the agent a question that should require the new tool (e.g. "what's
+the best way to prevent disease in my chickens" or "general tips for
+managing dissolved oxygen in a fish pond") in the Cortex Agent playground
+(or via CoCo) and confirm the response draws on real content from
+AGRONOMY_NOTES (not generic knowledge from the base model, and not a
+structured-data answer from query_farm_ops), and confirm the agent still
+correctly answers a live-data question (e.g. "what's the status of
+Tilapia Pond A") using query_farm_ops as before -- both tools working
+side by side.
+```
+
+Result:

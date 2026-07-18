@@ -386,6 +386,123 @@
         "Screenshots (collapsed and expanded) confirm the visual result: header card shows a compact 'History' pill button with a chevron next to the asset name/risk badge; expanding it inline-reveals the real timeline ('Q4-2024 -- biomass kg harvested: 145 -- Severe DO crash in Oct, 40% stock loss before recovery', etc.) directly under the header's divider, pushing Live Sensor Readings/AI Prediction/Recommendations down naturally; collapsing hides it again with no leftover empty space."
       ],
       "notes": "Confirmed via code (not just visual judgment) that Today's Tasks and Recommendations were literally the same underlying fetch before removing it -- see lib/api.ts:392-397's own comment: \"today's tasks framed as this asset's pending recommendations\"."
+    },
+    {
+      "id": "feat-048",
+      "priority": 41,
+      "area": "backend+frontend",
+      "name": "Add Greenhouse (vegetables) as a 5th real Farm Asset type",
+      "description": "User requested more assets for engagement; per AskUserQuestion, scoped to a real new Snowflake-backed Farm Asset type (not just decorative scenery, which feat-032 already covers), specifically a vegetable Greenhouse. Reuses most of ASSET_READINGS' existing columns (air_temp_c, humidity_pct, soil_moisture_pct, growth_stage, disease_risk_pct, harvest_readiness_pct, irrigation_status) and adds exactly one new column, co2_ppm, since CO2 concentration is a real, distinct greenhouse-management signal none of the other 4 asset types track. Seed data (drafted in snowflake/coco-prompts.md Part 3) gives the greenhouse a compound-risk story distinct from the fish pond's single-metric DO crisis: reduced ventilation causes humidity to climb and co2_ppm to deplete simultaneously (plants consuming CO2 with no fresh-air exchange), pushing disease_risk_pct up -- landing the asset at needs_attention severity specifically, since no asset in the current live data has ever reached that state (feat-034's amber warning-triangle badge has only been verified statically against the compiled bundle, never against real needs_attention data). Backend work: asset_simulator.py gets a 'greenhouse' entry in _NUMERIC_METRICS/_DEFAULT_SEEDS plus co2_ppm added to ALL_READING_FIELDS and the growth_stage-advancing asset_type list; schemas.py's AssetReading gets a nullable co2_ppm field; risk_engine.py gets a greenhouse branch (co2_ppm < 400 = stress, humidity_pct > 80% AND disease_risk_pct > 20% = elevated disease risk, disease_risk_pct > 40% = critical) plus a co2_depletion entry in _TREND_METRIC. Frontend work: lib/types.ts's AssetType union gains 'greenhouse'; a new GreenhouseMarker.tsx built on the shared MarkerFrame.tsx (per feat-033's shape-consistency pattern); DigitalTwinMap.tsx's asset-type-keyed marker/label maps and AssetDetailPanel.tsx's per-type reading-fields list both get a greenhouse entry (co2_ppm included, matching feat-017's precedent of keeping that list in sync with the simulator's real per-type fields to avoid the same field-mismatch bug found there).",
+      "user_visible_behavior": "A 5th marker (Greenhouse A) appears on the digital twin map alongside the existing 4, clickable to a real asset detail view with its own sensor readings (including a CO2 ppm reading no other asset has), AI recommendations, and history. It is the first asset to show a real (not just theoretical) needs_attention amber status, driven by a genuine compound humidity/CO2/disease pattern rather than a single-metric threshold.",
+      "dependencies": ["feat-011", "feat-012", "feat-013", "feat-017", "feat-033", "feat-034"],
+      "status": "not_started",
+      "verification": [
+        "Blocked until the user runs the new CoCo prompt (snowflake/coco-prompts.md Part 3) adding the co2_ppm column, seeding GH-001, and extending FARM_OPS_VIEW/FARM_OPS_AGENT -- this agent cannot create/alter Snowflake objects itself per CLAUDE.md",
+        "cd backend && python -m compileall app succeeds",
+        "A live /assets/GH-001 call (or equivalent direct query) returns real seeded data including a non-null co2_ppm reading, cross-checked directly against ASSET_READINGS",
+        "A live /workflow/run tick against the real account correctly assesses GH-001's risk as needs_attention (not none/low, not critical) during its seeded compound-stress window, and produces a real Cortex Agent recommendation citing the actual co2_ppm/humidity_pct/disease_risk_pct values",
+        "cd frontend && npx tsc --noEmit && npm run lint && npm run build all succeed",
+        "Live Playwright: confirm a 5th real marker renders on the map with the correct amber needs_attention treatment (feat-034's warning-triangle badge, exercised live for the first time), click through to /assets/GH-001, confirm the CO2 reading and greenhouse-specific recommendation content render correctly, zero console errors"
+      ],
+      "evidence": [],
+      "notes": "From a 2026-07-19 discussion on making the project 'more amazing and engaging' -- user chose a new real asset type over decorative-only scenery via AskUserQuestion, then chose Greenhouse over Beehives/Dairy barn as the specific type. Blocked on the same CoCo-prompt precedent as feat-043/feat-044; unlike those, this schema change is purely additive (ALTER ADD COLUMN + INSERT), not destructive."
+    },
+    {
+      "id": "feat-049",
+      "priority": 42,
+      "area": "backend",
+      "name": "Add a real, committed backend pytest suite",
+      "description": "Every feature in this file has been verified by a throwaway Playwright/Python script written fresh each session and discarded afterward -- none of that verification was repeatable or checked into the repo, and CLAUDE.md itself flags this gap ('Update init.sh to include real tests once any exist (there are none yet)'). Added backend/tests/ (pytest): test_risk_engine.py (assess_risk()/predict_trend() thresholds per asset type, severity ordering, missing-field handling), test_recommendation_parser.py (6-field markdown extraction, multi-block splitting, priority/confidence normalization, incomplete-block skipping), test_asset_simulator.py (seeded-RNG bounded-walk tests: metric bounds over 200 ticks per asset type, the dissolved-oxygen directional-drift rule, growth_stage monotonic advancement, irrigation_status/egg_count derivation), and test_clean_agent_answer.py (a committed regression suite reconstructing every narration-leak shape previously only tested ad hoc across Sessions 011-014/feat-040/feat-042: <answer>-tag, markdown-heading, glued-boundary, and multi-sentence content-based shapes, plus negative/idempotency/scan-window-bound cases). Added backend/requirements-dev.txt (adds pytest) and backend/pytest.ini.",
+      "user_visible_behavior": "No end-user-visible change -- this is test infrastructure. Running ./init.sh now actually exercises the app's core logic (risk thresholds, recommendation parsing, simulator behavior, narration-cleaning) via a real, repeatable pytest suite instead of only a syntax check.",
+      "dependencies": ["feat-011", "feat-012", "feat-040", "feat-042"],
+      "status": "passing",
+      "verification": [
+        "cd backend && python -m compileall app succeeds",
+        "cd backend && venv/Scripts/python -m pytest tests -q succeeds with zero failures",
+        "./init.sh runs the suite automatically when backend/venv exists"
+      ],
+      "evidence": [
+        "67 tests across 4 files, all passing: venv/Scripts/python.exe -m pytest -q -> '67 passed, 1 warning in 2.27s' (the 1 warning is a pre-existing, unrelated Pydantic class-Config deprecation notice, not from these tests).",
+        "test_clean_agent_answer.py cases were built from real documented shapes in progress.md/feature_list.json (the feat-042 reconstructed second-shape case, the feat-040 glued case, the <answer>-tag and heading shapes) rather than invented from scratch, plus new negative/idempotency/scan-window cases -- verified all pass against the actual current app/main.py implementation, not a mocked one.",
+        "Wired into init.sh (auto-detects backend/venv, runs 'pytest backend/tests -q' if present, prints a setup hint and skips gracefully otherwise). Ran ./init.sh end-to-end: compileall + all 67 pytest cases both green in one pass."
+      ],
+      "notes": "From a 2026-07-19 'what should we do to strengthen the project' discussion -- ranked #1 since it's an explicit, named gap in this repo's own CLAUDE.md and the one thing that compounds (every session since feat-008 re-paid the same from-scratch verification cost). Deliberately scoped to pure-logic modules (risk_engine, recommendation_parser, asset_simulator, _clean_agent_answer) rather than the Snowflake-connected route handlers in main.py, since those need a live account and are already covered by this repo's established live-Playwright/live-curl verification discipline -- unit tests complement that, they don't replace it."
+    },
+    {
+      "id": "feat-050",
+      "priority": 43,
+      "area": "frontend",
+      "name": "Add a real, committed frontend e2e suite (Playwright), wired into init.sh",
+      "description": "Same gap as feat-049 but for the frontend: every UI feature (feat-030 onward) was verified by a Playwright script installed fresh into the session scratchpad and thrown away. Added frontend/tests/e2e/ (@playwright/test, committed): map.spec.ts (marker count matches the real live /assets list, the Asset Status pill's counts and centering, click-through to the correct asset detail), tasks-due-today.spec.ts (Active Alerts/Daily Recommendations absence, hover-highlight + click-to-navigate on a real task row, gracefully skipped if there are zero pending tasks), and asset-detail.spec.ts (no duplicate Today's Tasks card, the History toggle's real expand/collapse). Every spec fetches ground truth directly from the real backend via Playwright's request fixture rather than hardcoding values, matching this project's established 'verify against real data' discipline. Deliberately excludes an approve/reject test -- see notes.",
+      "user_visible_behavior": "No end-user-visible change -- test infrastructure. npm run test:e2e (or ./init.sh, when the backend is reachable) now runs a real, repeatable browser suite against live data instead of a manually-authored one-off script.",
+      "dependencies": ["feat-045", "feat-046", "feat-047"],
+      "status": "passing",
+      "verification": [
+        "cd frontend && npx tsc --noEmit && npm run lint succeed (tests/e2e is eslint-ignored -- Node test-runner code, not Next.js app code)",
+        "cd frontend && npm run test:e2e succeeds against the live backend + live Snowflake account",
+        "./init.sh runs the suite automatically when frontend/node_modules exists and the backend is reachable at :8000"
+      ],
+      "evidence": [
+        "npx tsc --noEmit: clean. npm run lint: clean after adding tests/e2e/**, playwright-report/**, test-results/** to eslint.config.mjs's globalIgnores.",
+        "npm run test:e2e against the live dev servers + live Snowflake account: 7/7 passed in 16.0s (map renders exactly 4 real markers with zero console errors; Asset Status pill counts matched the live /assets response exactly, centered within 2px of the map stage's true center; clicking a real marker opened the correct /assets/{id}; Active Alerts/Daily Recommendations text absent, Tasks Due Today present; hovering the real first task produced exactly 1 highlight-ring on the correct marker, clicking it navigated to the correct asset; History toggled from 2790 to 3038 chars and back to exactly 2790 on a second click).",
+        "Re-ran the full chain via ./init.sh (compileall + 67 backend pytest cases + 7 frontend e2e cases) end-to-end in one pass, all green."
+      ],
+      "notes": "Deliberately did NOT add an approve/reject e2e test. That action writes real, hard-to-reverse state to the live Snowflake RECOMMENDATIONS table (see feat-017's evidence trail: a scripted click-and-poll test once accidentally approved all 4 of FP-001's real pending recommendations) -- acceptable as a one-off manual verification step (as every session has done), but not as something that mutates live demo data on every single automated test run. Approve/reject correctness stays a live manual check; feat-051's reset script exists specifically to undo any pile-up this causes."
+    },
+    {
+      "id": "feat-051",
+      "priority": 44,
+      "area": "backend",
+      "name": "Add a demo-reset script",
+      "description": "Live-testing across many sessions leaves the fish pond's DO reading wherever the random-walk simulator last drifted it, and pending_approval recommendations pile up next to leftovers from earlier runs (multiple progress.md sessions note this as a side effect). Added scripts/reset_demo_state.py: (1) looks up every fish_pond asset dynamically (not a hardcoded 'FP-001' string) and writes a fresh critical-DO ASSET_READINGS row plus a matching critical ASSET_RISK_ASSESSMENTS row, restoring the crisis regardless of prior drift; (2) deletes only pending_approval RECOMMENDATIONS rows (disposable/regenerable) -- already-decided approved/rejected rows are real history and are never touched. Deliberately does NOT fabricate a fresh recommendation set itself; that belongs to a real live POST /workflow/run call at demo time, since watching a genuine Cortex Agent call respond to the restored crisis is more convincing than a canned one. Supports --dry-run to preview without writing. This is a manual, opt-in admin tool, intentionally NOT wired into init.sh, since it mutates live demo data and shouldn't run as a side effect of routine verification.",
+      "user_visible_behavior": "Running the script before a demo/judging session guarantees the fish pond crisis and a clean pending-recommendations slate, regardless of what state prior live-testing left the account in.",
+      "dependencies": ["feat-008", "feat-011", "feat-012"],
+      "status": "passing",
+      "verification": [
+        "python -m py_compile scripts/reset_demo_state.py succeeds",
+        "Live --dry-run against the real Snowflake account correctly identifies the real fish_pond asset(s) and the real current pending_approval count, with zero writes",
+        "(Not exercised in this session: the real, non-dry-run destructive path -- deliberately not run against live demo data without the user's explicit go-ahead, per this session's own care-with-destructive-actions standard. Run manually when ready: cd backend && venv/Scripts/python ../scripts/reset_demo_state.py)"
+      ],
+      "evidence": [
+        "python -m py_compile: clean.",
+        "Live --dry-run output against the real account: '[DRY RUN] Would restore a fresh critical DO reading (3.5 mg/L) for: - FP-001 (Tilapia Pond A)' and '[DRY RUN] Would delete 12 pending_approval recommendation row(s).' -- correctly found the real fish_pond asset by querying FARM_ASSETS dynamically (not a hardcoded id) and correctly counted the real live pending total (12, matching feat-050's e2e evidence from the same session)."
+      ],
+      "notes": "The real (write) path was deliberately left unexecuted this session -- it would delete real live pending_approval RECOMMENDATIONS rows (including the ones feat-050's e2e suite just verified against), a hard-to-reverse mutation of shared demo data that wasn't explicitly requested. Verified via --dry-run (read-only) plus code review instead. Run it yourself (without --dry-run) whenever you want to actually reset before a demo."
+    },
+    {
+      "id": "feat-052",
+      "priority": 45,
+      "area": "backend",
+      "name": "Root-cause fix for Cortex Agent narration leaks via agent instructions (not another regex)",
+      "description": "_clean_agent_answer has now been extended 4 separate times (Sessions 011-014, feat-040, feat-042) for 4 different observed narration-leak shapes, each fix closing one shape before a new one appeared -- a sign the fix belongs upstream in FARM_OPS_AGENT's own response instructions, not in another backend heuristic. Drafted a CoCo prompt (snowflake/coco-prompts.md Part 4, prompt 1) to update the agent's response instructions so it ALWAYS wraps its final answer in <answer>/</answer> tags with zero exceptions, keeping all tool-planning narration strictly before the opening tag -- eliminating the whole bug class at the source instead of pattern-matching leak shapes after the fact.",
+      "user_visible_behavior": "Once run, every Cortex Agent response (briefing, copilot, workflow-run summaries) should arrive pre-cleaned from the agent itself, making backend/app/main.py's narration-stripping heuristics a defensive fallback rather than the primary defense.",
+      "dependencies": ["feat-040", "feat-042"],
+      "status": "not_started",
+      "verification": [
+        "Blocked until the user runs the new CoCo prompt (snowflake/coco-prompts.md Part 4, prompts 1-2) updating FARM_OPS_AGENT's response instructions and re-testing with multiple real questions -- this agent cannot update Cortex Agent configuration itself per CLAUDE.md",
+        "After the CoCo prompt runs: capture several fresh raw (uncleaned) Cortex Agent responses directly via cortex_agent_client.ask_agent() and confirm every one already starts cleanly at <answer> with zero narration outside the tags, before even applying _clean_agent_answer",
+        "A live GET /briefing/today and POST /copilot/ask call each confirm a clean, narration-free response"
+      ],
+      "evidence": [],
+      "notes": "From the same 2026-07-19 'strengthen the project' discussion as feat-049/050/051. Does not remove backend/app/main.py's existing _clean_agent_answer heuristics -- they stay as a defensive fallback even after this lands, since an LLM's adherence to a formatting instruction is a strong bias, not a hard guarantee."
+    },
+    {
+      "id": "feat-053",
+      "priority": 46,
+      "area": "backend",
+      "name": "Add a second, distinct Agent Skill: Cortex Search over agronomy notes",
+      "description": "FARM_OPS_AGENT has exactly one tool today, query_farm_ops (cortex_analyst_text_to_sql over FARM_OPS_VIEW) -- a structured-data lookup. This was originally scoped as an 'optional stretch' in snowflake/README.md and never built. Drafted a CoCo prompt (snowflake/coco-prompts.md Part 4, prompts 3-4) to create an AGRONOMY_NOTES table (general best-practice knowledge per asset type -- dissolved-oxygen management, coop biosecurity, rice nutrient management, orchard disease prevention -- distinct from ASSET_HISTORY's own-farm event log), a Cortex Search service over it, and wire it in as a second tool on FARM_OPS_AGENT alongside query_farm_ops, with orchestration instructions telling the agent when to use each and to cite which kind of source grounds each part of its answer.",
+      "user_visible_behavior": "The AI Copilot can answer general best-practice questions ('what's the best way to prevent disease in my chickens') by retrieving real semantic-search content, in addition to its existing live-data questions ('what's the status of Tilapia Pond A') -- two genuinely different tool types working together, not two structured-SQL tools doing the same kind of thing twice.",
+      "dependencies": ["feat-009"],
+      "status": "not_started",
+      "verification": [
+        "Blocked until the user runs the new CoCo prompt (snowflake/coco-prompts.md Part 4, prompts 3-4) creating AGRONOMY_NOTES, the Cortex Search service, and updating FARM_OPS_AGENT's tools -- this agent cannot create Snowflake/Cortex objects itself per CLAUDE.md",
+        "SELECT COUNT(*) FROM AGRONOMY_NOTES returns 15-20 rows",
+        "A live question requiring the new tool (e.g. general chicken-disease-prevention advice) returns content plausibly drawn from AGRONOMY_NOTES, not generic base-model knowledge and not a query_farm_ops structured answer",
+        "A live question requiring the existing tool (e.g. 'what's the status of Tilapia Pond A') still works correctly via query_farm_ops -- confirms both tools coexist without regressing the original one"
+      ],
+      "evidence": [],
+      "notes": "From the same 2026-07-19 discussion as feat-052 -- picked over the 3 other 'agent skill' candidates discussed (inventory-aware recommendations = feat-043, regulatory withdrawal check = feat-044, cost-in-dollars framing = not queued) specifically because it diversifies the *kind* of Cortex capability on display (semantic search vs. text-to-SQL), which the other candidates don't."
     }
   ],
   "completed_note": "2026-07-15: feat-008 through feat-029 (22 features -- the full FarmTwin pivot, the performance/split-screen-UX batch, and the visual-overhaul batch) all reached 'passing' with real runtime evidence and were removed from this active list at the user's explicit request, since they are done and were cluttering the list of upcoming work. Nothing was deleted from the repository or lost: every one of those features' full evidence trail (implementation details, verification commands run, real output, screenshots referenced) remains in progress.md's session-by-session log (Sessions 011 through 019). This mirrors the same precedent set by the 2026-07-14 pivot_note below, which did the same thing for the original feat-001 through feat-007."
