@@ -852,7 +852,13 @@ resource. Do not change query_farm_ops's tool_resources or any orchestration/
 response instructions.
 ```
 
-Result: _(not yet run)_
+Result:
+Done. Confirmed the change:
+
+  • Before: cortex_search_service: "CLIMATE_AG_COPILOT.OPS.AGRONOMY_SEARCH"
+  • After: search_service: "CLIMATE_AG_COPILOT.OPS.AGRONOMY_SEARCH"
+
+  The query_farm_ops tool_resources and all orchestration/response instructions are unchanged.
 
 ### Verification (Part 5)
 
@@ -867,4 +873,47 @@ Cortex Agent recommendation (not a 500), including one for GH-001 citing its
 real co2_ppm/humidity_pct/disease_risk_pct values.
 ```
 
-Result: _(not yet run)_
+Result: **Confirmed fixed, verified independently via this repo's own backend
+(not CoCo).**
+
+CoCo's own attempt to verify this via a raw PowerShell `curl.exe` call hit two
+separate dead ends unrelated to the actual fix: (1) an org-account URL/auth
+mismatch (`390142 "Incoming request does not contain a valid payload"`, then
+`401` after adjusting the auth header), and (2) then hit CoCo's own request
+rate limit ("maximum number of requests... reset in 5 hours"). Since the DDL
+change itself was already applied and confirmed (`cortex_search_service` ->
+`search_service`), this was independently re-verified directly from this
+repo's own `backend/app/services/cortex_agent_client.py` instead of waiting
+on CoCo, using this repo's own already-configured PAT -- no dependency on
+CoCo's rate limit either way.
+
+- Direct `ask_agent()` call ("What is the status of Greenhouse A (GH-001)?
+  Cite real data."): real response, no 400, citing real CO2 264 ppm,
+  humidity 91.8%, disease risk 33.4%.
+- Live `POST /workflow/run` (full end-to-end tick against the real account):
+  200 OK (previously a 500). `high_risk_assets: ["FP-001", "GH-001"]`.
+  Produced 6 real recommendations for FP-001 and 3 real recommendations for
+  GH-001, every one correctly tagged `[Live Data]` / `[Best Practice]` per
+  feat-053's response instructions (e.g. GH-001: "CO2 is at about 277 ppm...
+  [Best Practice] Fungal pathogens sporulate prolifically when humidity
+  exceeds 80%..."), clean narration-free text throughout (feat-052 holds).
+- `GET /assets/GH-001` immediately after: `latest_risk.notes` = "Disease
+  risk at 35.11% with humidity at 90.37%, elevated fungal-disease risk from
+  reduced ventilation" (`ts` = this tick's timestamp) -- an exact match to
+  `backend/app/services/risk_engine.py`'s new greenhouse branch's format
+  string, with fresh simulated values (not the original seed data),
+  confirming feat-048's new simulator/risk_engine code ran correctly
+  end-to-end against the live account for the first time.
+- Live `GET /briefing/today`: 200 OK, clean short real answer ("No
+  recommendations were approved or rejected today"), zero narration leak.
+- Live `POST /copilot/ask` ("What is the best way to prevent disease in my
+  chickens?"): real answer grounded in both tools side by side -- `[Live
+  Data]` cites CC-001's actual current readings (26.3C air temp, real
+  humidity, all-low risk history), `[Best Practice]` cites real
+  AGRONOMY_NOTES content (footbaths at 1%/2% concentrations, Newcastle/
+  infectious-bronchitis vaccination) -- proves feat-053's search_agronomy
+  tool works through this app's real REST integration, not just CoCo's own
+  interface (which is all its original Part 4 verification had tested).
+
+This closes the loop: `feat-048`, `feat-052`, and `feat-053` are all moved to
+`passing` in `feature_list.json` on the strength of this evidence.

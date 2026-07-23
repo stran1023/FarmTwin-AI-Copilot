@@ -78,6 +78,39 @@
     stops *all* Node processes system-wide, not just this session's dev
     servers -- worth knowing if anything else Node-based was expected to
     keep running.
+- **Session 029 (continued, 2026-07-24): user ran Part 5, unblocking all
+  three -- re-verified live and moved `feat-048`/`feat-052`/`feat-053` to
+  `passing`.** The user reported CoCo's own Part 5 verification attempt
+  hit two dead ends unrelated to the actual DDL fix: an org-account URL/auth
+  mismatch on a raw `curl.exe` test (`390142` then `401`), then CoCo's own
+  request rate limit ("reset in 5 hours"). Since Part 5's actual `ALTER
+  AGENT` change had already landed and was confirmed in `coco-prompts.md`
+  (`cortex_search_service` -> `search_service`), re-verified independently
+  from this repo's own backend instead of waiting on CoCo or its rate limit:
+  - Direct `ask_agent()` call: real response, no 400, citing GH-001's real
+    live CO2/humidity/disease values.
+  - Live `POST /workflow/run`: 200 OK (was 500). 6 real recommendations for
+    FP-001, 3 for GH-001, every one correctly `[Live Data]`/`[Best Practice]`
+    tagged and narration-free. `GET /assets/GH-001` immediately after showed
+    `latest_risk.notes` exactly matching `risk_engine.py`'s new greenhouse
+    format string with a fresh timestamp and fresh simulated values --
+    confirms `feat-048`'s simulator/risk_engine code, not just old seed
+    data, actually ran end-to-end against the live account.
+  - Live `GET /briefing/today`: clean real answer, zero narration leak
+    (`feat-052` holds).
+  - Live `POST /copilot/ask` ("best way to prevent disease in my chickens"):
+    real answer grounded in both tools side by side -- `[Live Data]` cited
+    CC-001's actual current readings, `[Best Practice]` cited real
+    `AGRONOMY_NOTES` content (footbaths at 1%/2% concentrations, Newcastle/
+    infectious-bronchitis vaccination) -- proves `feat-053`'s search tool
+    works through this app's real REST integration, not just CoCo's own
+    interface (which is all its original verification had tested).
+  - Filled in Part 5's `coco-prompts.md` verification "Result" with this
+    transcript (documenting both CoCo's dead-end and the actual independent
+    verification, since CoCo's own attempt never completed). Moved
+    `feat-048`, `feat-052`, `feat-053` to `passing` in `feature_list.json`
+    with full evidence. `feature_list.json` is back to fully `passing`
+    except `feat-043`/`feat-044`, which still have no CoCo prompt drafted.
 - **Session 028 (2026-07-19): built the automated test suites, a demo-reset
   script, and drafted CoCo prompts for 2 blocked "strengthen the project"
   items (`feat-049` through `feat-053`).** From a "what should we do to
@@ -271,25 +304,25 @@
   new CoCo prompt (Snowflake schema: `INVENTORY` for feat-043,
   `WITHDRAWAL_RULES`/`TREATMENTS` for feat-044) that only the user can run
   interactively, per `CLAUDE.md`. Neither has a drafted CoCo prompt yet.
-- **`feat-048`/`feat-052`/`feat-053` are all `blocked` as of Session 029
-  (2026-07-24)** — code/CoCo work is done for all three, but a live-breaking
-  bug in `FARM_OPS_AGENT`'s `search_agronomy` tool (wrong `tool_resources`
-  field name, introduced by `feat-053`'s own CoCo prompt) makes every call to
-  the agent 400 before it runs, for every asset/question. Root-caused and a
-  corrective CoCo prompt is drafted at `snowflake/coco-prompts.md` Part 5 —
-  see the Session 029 entry above for full detail.
-- Highest-priority unfinished feature: run `snowflake/coco-prompts.md` Part 5
-  (fixes the agent regression and unblocks `feat-048`/`feat-052`/`feat-053`
-  all at once) — after that, `feat-043` or `feat-044` (still need their own
-  CoCo prompts drafted first).
+- **`feat-048`/`feat-052`/`feat-053` are all `passing` as of Session 029
+  (2026-07-24)**, resolving a live-breaking regression discovered mid-session:
+  `FARM_OPS_AGENT`'s `search_agronomy` tool had a wrong `tool_resources`
+  field name (introduced by `feat-053`'s own CoCo prompt), making every call
+  to the agent 400 before it ran, for every asset/question. Root-caused,
+  fixed via `snowflake/coco-prompts.md` Part 5 (run by the user), and
+  re-verified live end to end (`/workflow/run`, `/briefing/today`,
+  `/copilot/ask` all confirmed working through this app's real REST
+  integration) — see the Session 029 entries above for full detail.
+- `feature_list.json` is back to fully `passing` except `feat-043`/`feat-044`,
+  which don't have a drafted CoCo prompt yet.
+- Highest-priority unfinished feature: `feat-043` or `feat-044` — both need a
+  new CoCo prompt drafted (Snowflake schema: `INVENTORY` for feat-043,
+  `WITHDRAWAL_RULES`/`TREATMENTS` for feat-044) before backend work can start.
 - Blockers: `feat-043`/`feat-044` need their own Snowflake objects
-  created/altered via CoCo (no prompt drafted yet). `feat-048`/`feat-052`/
-  `feat-053` need `snowflake/coco-prompts.md` Part 5 run to fix the
-  `search_agronomy` `tool_resources` field-name bug.
-- Recommended Next Step: ask the user to run `snowflake/coco-prompts.md`
-  Part 5 (a small, non-destructive `ALTER AGENT` field-name correction),
-  then re-verify `feat-048`/`feat-052`/`feat-053` live and move them to
-  `passing`.
+  created/altered via CoCo (no prompt drafted yet).
+- Recommended Next Step: draft the CoCo prompt for whichever of
+  `feat-043`/`feat-044` the user wants to tackle next, then run it
+  interactively and implement the backend/frontend work once it lands.
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
 
