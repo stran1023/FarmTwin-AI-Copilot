@@ -917,3 +917,214 @@ CoCo's rate limit either way.
 
 This closes the loop: `feat-048`, `feat-052`, and `feat-053` are all moved to
 `passing` in `feature_list.json` on the strength of this evidence.
+
+---
+
+## Part 6 — inventory/stock-aware recommendations (drafted 2026-07-24, not yet run)
+
+Drafted for `feat-043` in `feature_list.json`. Purely additive (`CREATE TABLE`
++ `ALTER TABLE ... ADD COLUMN`) -- no existing table is dropped or altered
+destructively. Review wording before running.
+
+### 1. Schema (feat-043)
+
+```
+Create a new table INVENTORY (item_name, category, unit, qty_on_hand,
+reorder_threshold, last_restocked) in CLIMATE_AG_COPILOT.OPS. Also alter
+RECOMMENDATIONS to add one new nullable column: stock_availability (values
+will be in_stock / low_stock / out_of_stock). Do not modify or drop any
+existing column on RECOMMENDATIONS or any other table.
+```
+
+Result: _(not yet run)_
+
+### 2. Seed data (feat-043)
+
+```
+Populate INVENTORY with realistic stock levels for the items this farm's
+existing recommendation content already references: aerator_unit (fish
+pond emergency aeration), probiotic_dose and antibiotic_dose (fish pond
+treatment), chicken_feed_bag (coop restocking), irrigation_valve (rice
+field / greenhouse irrigation), fungicide_sulfur (greenhouse / orchard
+disease treatment), water_test_kit. Deliberately vary stock levels to tell
+a real story, not arbitrary numbers: make antibiotic_dose 0 units on hand
+(out of stock -- directly relevant to Tilapia Pond A's ongoing critical
+dissolved-oxygen crisis, which has already recommended treatment-adjacent
+actions), aerator_unit at or just below its reorder_threshold (low stock,
+also directly relevant to the same crisis), and every other item
+comfortably above its reorder_threshold (well-stocked, so the agent has
+real contrast to reason over rather than everything being short).
+last_restocked should be a realistic recent date per item.
+```
+
+Result: _(not yet run)_
+
+### 3. Semantic view update (feat-043)
+
+```
+Extend the existing FARM_OPS_VIEW semantic view in CLIMATE_AG_COPILOT.OPS
+to also include INVENTORY (item_name, category, unit, qty_on_hand,
+reorder_threshold, last_restocked) as a new logical table, with AI_SQL_
+GENERATION guidance explaining how to determine stock status from
+qty_on_hand vs. reorder_threshold (0 units = out_of_stock, at or below
+reorder_threshold = low_stock, otherwise in_stock). This table has no
+direct foreign key to FARM_ASSETS or ASSET_TYPE -- the agent needs to
+reason from the recommended action's real-world item (e.g. "aeration"
+implies aerator_unit, "antibiotic treatment" implies antibiotic_dose) to
+the matching INVENTORY row, not a literal join. Re-verify the existing
+onboarding queries still work unchanged, then verify a new query: "is
+there enough antibiotic on hand to treat the fish pond" correctly returns
+the real INVENTORY row and stock status.
+```
+
+Result: _(not yet run)_
+
+### 4. Cortex Agent update (feat-043)
+
+```
+Update FARM_OPS_AGENT's orchestration instructions in CLIMATE_AG_COPILOT.OPS
+so that before finalizing any recommendation whose action requires a
+specific consumable or equipment item (aeration, a treatment/medication,
+feed, irrigation parts, a fungicide/pesticide), the agent checks that
+item's real current stock level in INVENTORY. Update the response
+instructions so every recommendation now includes a 7th bolded field,
+**Stock Availability**, immediately after Confidence, with one of exactly
+three values: in_stock, low_stock, or out_of_stock -- and, when the value
+is not in_stock, the Recommendation and/or Reason text itself must
+explicitly acknowledge the shortage (e.g. "requires antibiotic treatment --
+0 units in stock, reorder before acting") rather than recommending an
+action with no real way to execute it. Recommendations whose action does
+not depend on a specific stocked item (e.g. "monitor closely", "reduce
+feeding") should report Stock Availability as in_stock (nothing blocks
+executing them) rather than omitting the field. Test with at least 2 real
+questions: one that should surface a real out-of-stock or low-stock item
+(e.g. a fresh recommendation for the fish pond) and one that should surface
+a well-stocked item, confirming the 7th field appears correctly and
+accurately in both, and that the well-stocked case does not spuriously
+claim a shortage that doesn't exist.
+```
+
+Result: _(not yet run)_
+
+### 5. Verification (feat-043)
+
+```
+Verify in Snowsight (or via CoCo):
+
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.INVENTORY ORDER BY item_name;
+SELECT COUNT(*) FROM CLIMATE_AG_COPILOT.OPS.RECOMMENDATIONS
+  WHERE stock_availability IS NOT NULL;  -- 0 is fine pre-implementation,
+  -- this column is only populated once backend/app/main.py's INSERT is
+  -- updated to write it (feat-043's own application code, not a CoCo step)
+
+Ask the agent a test question about a fish-pond treatment recommendation
+and confirm the response's Stock Availability field correctly reflects
+the real seeded antibiotic_dose=0 (out_of_stock) or aerator_unit low-stock
+row, with the recommendation text itself acknowledging the shortage.
+```
+
+Result: _(not yet run)_
+
+---
+
+## Part 7 — regulatory/withdrawal-period compliance check (drafted 2026-07-24, not yet run)
+
+Drafted for `feat-044` in `feature_list.json`. Purely additive (2 new
+`CREATE TABLE`s) -- no existing table is touched. Review wording before
+running.
+
+### 1. Schema (feat-044)
+
+```
+Create two new tables in CLIMATE_AG_COPILOT.OPS: WITHDRAWAL_RULES
+(treatment_name, asset_type, withdrawal_days) and TREATMENTS (asset_id,
+treatment_name, administered_at). Do not modify or drop any existing table.
+```
+
+Result: _(not yet run)_
+
+### 2. Seed data (feat-044)
+
+```
+Populate WITHDRAWAL_RULES with realistic withdrawal periods per treatment
+and asset type: antibiotic_treatment for fish_pond (14 days), probiotic_
+treatment for fish_pond (0 days -- no withdrawal period, so this never
+blocks harvest), newcastle_vaccine for chicken_coop (21 days),
+fungicide_sulfur for greenhouse (3 days), copper_fungicide for
+fruit_orchard (7 days).
+
+Populate TREATMENTS with one real, currently-active demonstrable scenario:
+an antibiotic_treatment administered to FP-001 (Tilapia Pond A) a few days
+ago -- consistent with the fish pond's ongoing dissolved-oxygen crisis and
+its existing recommendation history recommending treatment-adjacent
+actions -- with administered_at set so that, combined with the 14-day
+withdrawal period, the earliest safe harvest date is a few days in the
+future from today (2026-07-24), giving a real, currently-active
+withdrawal window to demo without needing anything else approved first.
+```
+
+Result: _(not yet run)_
+
+### 3. Semantic view update (feat-044)
+
+```
+Extend the existing FARM_OPS_VIEW semantic view in CLIMATE_AG_COPILOT.OPS
+to also include TREATMENTS and WITHDRAWAL_RULES as new logical tables,
+both joined to assets via asset_id (TREATMENTS) and asset_type
+(WITHDRAWAL_RULES via TREATMENTS.treatment_name -> WITHDRAWAL_RULES.
+treatment_name). Add AI_SQL_GENERATION guidance explaining how to compute
+the earliest safe harvest/sale date (administered_at + withdrawal_days)
+and that an asset is "under an active withdrawal period" if that computed
+date is still in the future relative to today. Re-verify the existing
+onboarding queries still work unchanged, then verify a new query: "is
+Tilapia Pond A safe to harvest right now" correctly returns the real
+computed earliest-safe-harvest date from the seeded TREATMENTS/
+WITHDRAWAL_RULES data.
+```
+
+Result: _(not yet run)_
+
+### 4. Cortex Agent update (feat-044)
+
+```
+Update FARM_OPS_AGENT's orchestration instructions in CLIMATE_AG_COPILOT.OPS
+so that before generating any harvest- or sale-related recommendation for
+an asset, the agent checks TREATMENTS + WITHDRAWAL_RULES for that asset. If
+the asset is under an active withdrawal period (computed earliest-safe date
+still in the future), the agent must surface a clear compliance warning
+citing the real computed date and the treatment/administered_at that
+caused it (e.g. "do not harvest before 2026-08-01 -- 14-day withdrawal
+period after the 2026-07-18 antibiotic treatment") instead of staying
+silent on it or generating a harvest recommendation that ignores the
+constraint. Assets with no recent regulated treatment, or whose withdrawal
+period has already elapsed, must NOT get a compliance warning (no false
+positives). This applies alongside the existing 6-field recommendation
+format -- the compliance warning is prose within the Recommendation/Reason/
+Evidence fields (grounded in real TREATMENTS/WITHDRAWAL_RULES data), not a
+new bolded field, since it only applies to a subset of recommendations
+(harvest/sale-related) rather than every recommendation the way Stock
+Availability does. Test with 2 real questions: one about Tilapia Pond A
+(should surface the real active withdrawal warning from the seeded
+treatment) and one about an asset with no recent treatment (should not
+mention withdrawal periods at all).
+```
+
+Result: _(not yet run)_
+
+### 5. Verification (feat-044)
+
+```
+Verify in Snowsight (or via CoCo):
+
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.WITHDRAWAL_RULES ORDER BY asset_type;
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.TREATMENTS ORDER BY administered_at;
+
+Ask the agent "when is it safe to harvest Tilapia Pond A" and confirm the
+response cites the real computed earliest-safe-harvest date grounded in
+the seeded antibiotic_treatment administered_at + 14-day withdrawal_days,
+not a generic disclaimer. Ask the agent the same style of question about
+an asset with no recent treatment (e.g. Layer House North) and confirm no
+compliance warning appears.
+```
+
+Result: _(not yet run)_

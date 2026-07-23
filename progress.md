@@ -3,6 +3,22 @@
 ## Current Verified State
 
 - Last Updated: 2026-07-24
+- **Session 029 (continued, 2026-07-24): drafted CoCo prompts for feat-043
+  and feat-044.** User asked to draft prompts for the two still-`not_started`
+  features now that feat-048/052/053 are resolved. Added `snowflake/
+  coco-prompts.md` Part 6 (feat-043, inventory/stock-aware recommendations --
+  new `INVENTORY` table seeded with a deliberate story tied to FP-001's
+  ongoing crisis: `antibiotic_dose` at 0 units, `aerator_unit` near its
+  reorder threshold, everything else well-stocked; a new 7th bolded
+  `**Stock Availability**` recommendation field) and Part 7 (feat-044,
+  withdrawal-period compliance -- new `WITHDRAWAL_RULES` + `TREATMENTS`
+  tables, pre-seeded with one real active withdrawal scenario -- a recent
+  antibiotic treatment on FP-001 -- so the compliance warning is immediately
+  live-demoable without needing the approve-flow write-through built first).
+  Both are purely additive (no existing table touched). Neither prompt has
+  been run -- `feat-043`/`feat-044` remain `not_started` in
+  `feature_list.json`, now pointing at Part 6/Part 7 respectively. No
+  application code changed this entry (drafting only).
 - **Session 029 (2026-07-24): implemented feat-048 (Greenhouse asset) end to
   end; discovered and root-caused a live-breaking regression in
   FARM_OPS_AGENT that also blocks feat-052/feat-053 from being marked
