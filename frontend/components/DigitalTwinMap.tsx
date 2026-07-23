@@ -14,6 +14,7 @@ import { FishPondMarker } from "./FishPondMarker"
 import { ChickenCoopMarker } from "./ChickenCoopMarker"
 import { RiceFieldMarker } from "./RiceFieldMarker"
 import { FruitOrchardMarker } from "./FruitOrchardMarker"
+import { GreenhouseMarker } from "./GreenhouseMarker"
 
 /**
  * Measures the available container and returns the scale factor needed to fit
@@ -143,6 +144,7 @@ function MarkerIllustration({ asset }: { asset: Asset }) {
     chicken_coop: <ChickenCoopMarker asset={asset} />,
     rice_field: <RiceFieldMarker asset={asset} />,
     fruit_orchard: <FruitOrchardMarker asset={asset} />,
+    greenhouse: <GreenhouseMarker asset={asset} />,
   }
   return <>{map[asset.type]}</>
 }

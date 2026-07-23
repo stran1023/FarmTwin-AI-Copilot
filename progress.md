@@ -2,7 +2,82 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-07-19
+- Last Updated: 2026-07-24
+- **Session 029 (2026-07-24): implemented feat-048 (Greenhouse asset) end to
+  end; discovered and root-caused a live-breaking regression in
+  FARM_OPS_AGENT that also blocks feat-052/feat-053 from being marked
+  passing.** User asked to check `snowflake/coco-prompts.md` and implement
+  whatever `not_started` features were now unblocked. Parts 3 and 4's CoCo
+  prompts (`feat-048`, `feat-052`, `feat-053`) had all been run and verified
+  by the user/CoCo already -- this session implemented the application code
+  for `feat-048` (the only one needing any) and attempted live re-verification
+  of all three.
+  - **feat-048 (Greenhouse):** Backend -- `schemas.py` (AssetType +
+    `co2_ppm`), `asset_simulator.py` (a full `greenhouse` entry in
+    `_NUMERIC_METRICS`/`_DEFAULT_SEEDS`, `co2_ppm` in `ALL_READING_FIELDS`,
+    greenhouse added to the growth-stage/irrigation-status asset-type lists),
+    `risk_engine.py` (a greenhouse branch: co2<400=stress,
+    humidity>80%+disease>20%=medium, disease>40%=critical, plus a
+    `co2_depletion` trend metric). Added 16 new pytest cases mirroring this
+    repo's existing per-type test pattern -- 83/83 backend tests pass.
+    Frontend -- `lib/types.ts` AssetType, new `GreenhouseMarker.tsx` (SVG
+    frame + real-growth_stage-driven plant rows, same pattern as
+    `RiceFieldMarker`), wired into `MarkerFrame.tsx`, `DigitalTwinMap.tsx`,
+    `AssetDetailPanel.tsx`, and `lib/api.ts`'s `READING_FIELDS_BY_TYPE` +
+    tone rules. `tsc`/`lint`/`build` all clean.
+  - **Bug found + fixed (pre-existing, not introduced by feat-048):**
+    `GET /assets/{id}`'s `AssetOverview` never populated
+    `growth_stage`/`irrigation_status`/`harvest_readiness_pct` (always null),
+    unlike `GET /assets` (list) which does -- silently defaulting every
+    per-type marker glyph on the Asset Detail page to a mid-scale look
+    instead of the real value. Fixed in `main.py`'s `get_asset_detail()` by
+    sourcing those 3 fields from the already-fetched `latest_reading`.
+  - **Live-verified (real backend + live Snowflake account):**
+    `GET /assets/GH-001` and `GET /assets` both return the real seeded
+    compound-stress data (co2_ppm=260, humidity_pct=90, disease_risk_pct=34,
+    risk_level=medium, status=needs_attention); Playwright confirmed the 5th
+    marker's real aria-label ("Greenhouse A, greenhouse, needs attention"),
+    the map's Asset Status pill ("Critical 1 / Attention 1 / Healthy 3"), and
+    the Asset Detail readings panel rendering all 7 real values verbatim
+    (including "CO₂ 260 ppm"), zero console errors.
+  - **Live-breaking regression discovered (not feat-048's fault):** a real
+    `POST /workflow/run` tick failed with a 500 -- every call to
+    `FARM_OPS_AGENT` now 400s with `{"code":"399504","message":"The field
+    \"search_service\" is not provided for Cortex Search tool resource"}`,
+    **before the agent even runs**, for every asset and every question, not
+    just greenhouse-related ones. Root-caused via `DESCRIBE AGENT
+    CLIMATE_AG_COPILOT.OPS.FARM_OPS_AGENT`: `feat-053`'s CoCo prompt (Part 4
+    prompt 3, already run) created the `search_agronomy` tool's
+    `tool_resources` using the field name `cortex_search_service`, but the
+    real Cortex Agents Run REST API
+    (https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-run)
+    expects `search_service`. Confirmed via 5 direct live request variants
+    (no `tool_resources`; `search_service` nested/flat; `cortex_search_service`
+    nested; a full mirror of the agent's own registered defaults) that this
+    is **not** fixable from the REST client -- all 5 produced the identical
+    error, meaning the platform validates the agent's own broken persisted
+    default before ever inspecting what the caller sent. This means
+    `feat-053`'s own CoCo-reported verification (querying the tools through
+    Snowsight/CoCo's interface) never actually exercised this app's real
+    integration path, so its "both tools work side by side" result didn't
+    catch this. Updated `cortex_agent_client.py` to send the textbook-correct
+    `search_service` field regardless (ready the moment the agent is fixed)
+    and drafted the corrective CoCo prompt as `snowflake/coco-prompts.md`
+    Part 5 (field-name fix only, nothing else touched).
+  - **Result:** `feat-048` moved to `blocked` (all code implemented and
+    live-verified except the one step this regression blocks -- a real
+    Cortex Agent recommendation for GH-001). `feat-052` and `feat-053` moved
+    from `not_started` to `blocked` as well: their CoCo prompts *did* run
+    successfully and their own recorded verification is real, but neither
+    can be independently re-verified through this app's actual REST
+    integration right now, and `feat-053` specifically is the one that broke
+    it. All three unblock together once `snowflake/coco-prompts.md` Part 5
+    is run.
+  - Killed all background uvicorn/next-dev/playwright processes after
+    verification. Note: cleanup used `taskkill //F //IM node.exe`, which
+    stops *all* Node processes system-wide, not just this session's dev
+    servers -- worth knowing if anything else Node-based was expected to
+    keep running.
 - **Session 028 (2026-07-19): built the automated test suites, a demo-reset
   script, and drafted CoCo prompts for 2 blocked "strengthen the project"
   items (`feat-049` through `feat-053`).** From a "what should we do to
@@ -195,15 +270,26 @@
   "Agent Skills" and "guardrails" judging bullets. Both are blocked on a
   new CoCo prompt (Snowflake schema: `INVENTORY` for feat-043,
   `WITHDRAWAL_RULES`/`TREATMENTS` for feat-044) that only the user can run
-  interactively, per `CLAUDE.md`.
-- Highest-priority unfinished feature: `feat-043`, `feat-044`, or `feat-048`
-  — all three ready to start once the user runs their respective needed
-  CoCo prompt.
-- Blockers: `feat-043`/`feat-044`/`feat-048` each need their own Snowflake
-  objects created/altered via CoCo before backend work can start (see
-  above; `feat-048`'s draft prompt is `snowflake/coco-prompts.md` Part 3).
-- Recommended Next Step: ask the user which of `feat-043`/`feat-044`/
-  `feat-048`'s CoCo prompts to run first.
+  interactively, per `CLAUDE.md`. Neither has a drafted CoCo prompt yet.
+- **`feat-048`/`feat-052`/`feat-053` are all `blocked` as of Session 029
+  (2026-07-24)** — code/CoCo work is done for all three, but a live-breaking
+  bug in `FARM_OPS_AGENT`'s `search_agronomy` tool (wrong `tool_resources`
+  field name, introduced by `feat-053`'s own CoCo prompt) makes every call to
+  the agent 400 before it runs, for every asset/question. Root-caused and a
+  corrective CoCo prompt is drafted at `snowflake/coco-prompts.md` Part 5 —
+  see the Session 029 entry above for full detail.
+- Highest-priority unfinished feature: run `snowflake/coco-prompts.md` Part 5
+  (fixes the agent regression and unblocks `feat-048`/`feat-052`/`feat-053`
+  all at once) — after that, `feat-043` or `feat-044` (still need their own
+  CoCo prompts drafted first).
+- Blockers: `feat-043`/`feat-044` need their own Snowflake objects
+  created/altered via CoCo (no prompt drafted yet). `feat-048`/`feat-052`/
+  `feat-053` need `snowflake/coco-prompts.md` Part 5 run to fix the
+  `search_agronomy` `tool_resources` field-name bug.
+- Recommended Next Step: ask the user to run `snowflake/coco-prompts.md`
+  Part 5 (a small, non-destructive `ALTER AGENT` field-name correction),
+  then re-verify `feat-048`/`feat-052`/`feat-053` live and move them to
+  `passing`.
 
 ## Session 015 — new roadmap: performance + split-screen UX + visual polish
 

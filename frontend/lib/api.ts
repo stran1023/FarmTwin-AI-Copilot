@@ -87,6 +87,7 @@ interface BackendAssetReading {
   irrigation_status: string | null
   disease_risk_pct: number | null
   harvest_readiness_pct: number | null
+  co2_ppm: number | null
 }
 
 interface BackendAssetRisk {
@@ -292,6 +293,8 @@ function toneFor(key: keyof BackendAssetReading, value: number): Reading["tone"]
       if (value > 40) return "bad"
       if (value > 20) return "warn"
       return "good"
+    case "co2_ppm":
+      return value < 400 ? "warn" : "good"
     default:
       return undefined
   }
@@ -324,6 +327,15 @@ const READING_FIELDS_BY_TYPE: Record<AssetType, ReadingField[]> = {
   ],
   fruit_orchard: [
     { key: "growth_stage", label: "Growth stage" },
+    { key: "soil_moisture_pct", label: "Soil moisture", unit: "%" },
+    { key: "disease_risk_pct", label: "Disease risk", unit: "%" },
+    { key: "harvest_readiness_pct", label: "Harvest readiness", unit: "%" },
+  ],
+  greenhouse: [
+    { key: "growth_stage", label: "Growth stage" },
+    { key: "air_temp_c", label: "Air temp", unit: "°C" },
+    { key: "humidity_pct", label: "Humidity", unit: "%" },
+    { key: "co2_ppm", label: "CO₂", unit: "ppm" },
     { key: "soil_moisture_pct", label: "Soil moisture", unit: "%" },
     { key: "disease_risk_pct", label: "Disease risk", unit: "%" },
     { key: "harvest_readiness_pct", label: "Harvest readiness", unit: "%" },

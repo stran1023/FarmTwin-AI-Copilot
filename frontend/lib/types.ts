@@ -1,4 +1,4 @@
-export type AssetType = "fish_pond" | "chicken_coop" | "rice_field" | "fruit_orchard"
+export type AssetType = "fish_pond" | "chicken_coop" | "rice_field" | "fruit_orchard" | "greenhouse"
 
 export type AssetStatus = "critical" | "needs_attention" | "healthy"
 

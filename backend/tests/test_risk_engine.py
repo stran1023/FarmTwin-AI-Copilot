@@ -107,6 +107,54 @@ class TestAssessRiskFruitOrchard:
         assert risk_type == "none"
 
 
+class TestAssessRiskGreenhouse:
+    def test_disease_critical_above_40_pct(self):
+        risk_type, level, _ = assess_risk("greenhouse", {"disease_risk_pct": 45.0})
+        assert risk_type == "disease"
+        assert level == "critical"
+
+    def test_disease_medium_when_humid_and_elevated(self):
+        risk_type, level, _ = assess_risk(
+            "greenhouse", {"disease_risk_pct": 34.0, "humidity_pct": 90.0}
+        )
+        assert risk_type == "disease"
+        assert level == "medium"
+
+    def test_disease_not_flagged_when_humidity_normal(self):
+        risk_type, _, _ = assess_risk(
+            "greenhouse", {"disease_risk_pct": 25.0, "humidity_pct": 60.0}
+        )
+        assert risk_type == "none"
+
+    def test_co2_depletion_below_400(self):
+        risk_type, level, notes = assess_risk("greenhouse", {"co2_ppm": 260.0})
+        assert risk_type == "co2_depletion"
+        assert level == "medium"
+        assert "260" in notes
+
+    def test_co2_not_flagged_at_or_above_400(self):
+        risk_type, _, _ = assess_risk("greenhouse", {"co2_ppm": 400.0})
+        assert risk_type == "none"
+
+    def test_critical_disease_outranks_co2_depletion(self):
+        risk_type, level, _ = assess_risk(
+            "greenhouse", {"disease_risk_pct": 45.0, "co2_ppm": 260.0}
+        )
+        assert risk_type == "disease"
+        assert level == "critical"
+
+    def test_seeded_gh001_compound_stress_reading(self):
+        # Real seeded GH-001 values from snowflake/coco-prompts.md Part 3
+        # (humidity 90%, co2 260ppm, disease 34%) should land at "medium"
+        # (needs_attention), not critical -- the whole point of the story.
+        risk_type, level, _ = assess_risk(
+            "greenhouse",
+            {"humidity_pct": 90.0, "co2_ppm": 260.0, "disease_risk_pct": 34.0},
+        )
+        assert level == "medium"
+        assert risk_type in ("disease", "co2_depletion")
+
+
 class TestPredictTrend:
     def test_no_previous_reading_returns_none(self):
         assert predict_trend("dissolved_oxygen", {"dissolved_oxygen_mg_l": 3.0}, None) is None

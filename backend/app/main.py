@@ -463,6 +463,9 @@ def get_asset_detail(asset_id: str):
         health_score=_health_score(risk_level),
         status=_asset_status(risk_level),
         latest_alert=latest_risk.notes if latest_risk and risk_level != "low" else None,
+        growth_stage=latest_reading.growth_stage if latest_reading else None,
+        irrigation_status=latest_reading.irrigation_status if latest_reading else None,
+        harvest_readiness_pct=latest_reading.harvest_readiness_pct if latest_reading else None,
     )
 
     return AssetDetail(

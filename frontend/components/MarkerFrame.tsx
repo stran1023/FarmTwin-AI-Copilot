@@ -10,6 +10,7 @@ const TYPE_LABEL: Record<AssetType, string> = {
   chicken_coop: "chicken coop",
   rice_field: "rice field",
   fruit_orchard: "fruit orchard",
+  greenhouse: "greenhouse",
 }
 
 const STATUS_LABEL: Record<Asset["status"], string> = {

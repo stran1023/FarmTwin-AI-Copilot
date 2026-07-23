@@ -23,6 +23,7 @@ _TREND_METRIC = {
     "flood": ("soil_moisture_pct", "higher_worse"),
     "nutrient_deficiency": ("nitrogen_ppm", "lower_worse"),
     "disease": ("disease_risk_pct", "higher_worse"),
+    "co2_depletion": ("co2_ppm", "lower_worse"),
 }
 
 
@@ -74,6 +75,27 @@ def assess_risk(asset_type: str, reading: dict) -> tuple[str, str, str]:
                 add("disease", "critical", f"Disease risk at {disease}%, above the 40% critical threshold.")
             elif disease > 20.0:
                 add("disease", "high", f"Disease risk at {disease}%, above the 20% elevated threshold.")
+
+    elif asset_type == "greenhouse":
+        disease = reading.get("disease_risk_pct")
+        humidity = reading.get("humidity_pct")
+        co2 = reading.get("co2_ppm")
+        if disease is not None:
+            if disease > 40.0:
+                add("disease", "critical", f"Disease risk at {disease}%, above the 40% critical threshold.")
+            elif humidity is not None and humidity > 80.0 and disease > 20.0:
+                add(
+                    "disease",
+                    "medium",
+                    f"Disease risk at {disease}% with humidity at {humidity}%, elevated fungal-disease risk "
+                    "from reduced ventilation.",
+                )
+        if co2 is not None and co2 < 400.0:
+            add(
+                "co2_depletion",
+                "medium",
+                f"CO2 at {co2} ppm, below the 400 ppm daytime stress threshold -- ventilation or enrichment needed.",
+            )
 
     if not candidates:
         return ("none", "low", "All monitored metrics within normal range.")

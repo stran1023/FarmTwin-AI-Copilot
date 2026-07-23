@@ -13,12 +13,14 @@ import { FishPondMarker } from "./FishPondMarker"
 import { ChickenCoopMarker } from "./ChickenCoopMarker"
 import { RiceFieldMarker } from "./RiceFieldMarker"
 import { FruitOrchardMarker } from "./FruitOrchardMarker"
+import { GreenhouseMarker } from "./GreenhouseMarker"
 
 const TYPE_LABEL: Record<AssetType, string> = {
   fish_pond: "Fish Pond",
   chicken_coop: "Chicken Coop",
   rice_field: "Rice Field",
   fruit_orchard: "Fruit Orchard",
+  greenhouse: "Greenhouse",
 }
 
 function AssetGlyph({ asset }: { asset: AssetDetail }) {
@@ -27,6 +29,7 @@ function AssetGlyph({ asset }: { asset: AssetDetail }) {
     chicken_coop: <ChickenCoopMarker asset={asset} />,
     rice_field: <RiceFieldMarker asset={asset} />,
     fruit_orchard: <FruitOrchardMarker asset={asset} />,
+    greenhouse: <GreenhouseMarker asset={asset} />,
   }
   return <>{map[asset.type]}</>
 }

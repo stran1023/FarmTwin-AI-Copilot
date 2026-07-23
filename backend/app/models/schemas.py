@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-AssetType = Literal["fish_pond", "chicken_coop", "rice_field", "fruit_orchard"]
+AssetType = Literal["fish_pond", "chicken_coop", "rice_field", "fruit_orchard", "greenhouse"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 Priority = Literal["low", "medium", "high"]
 RecommendationStatus = Literal["pending_approval", "approved", "rejected"]
@@ -47,6 +47,7 @@ class AssetReading(BaseModel):
     irrigation_status: str | None = None
     disease_risk_pct: float | None = None
     harvest_readiness_pct: float | None = None
+    co2_ppm: float | None = None
 
 
 class AssetRisk(BaseModel):

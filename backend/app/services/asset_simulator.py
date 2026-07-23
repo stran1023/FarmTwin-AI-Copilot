@@ -25,7 +25,7 @@ ALL_READING_FIELDS = [
     "water_temp_c", "ph", "dissolved_oxygen_mg_l", "feed_level_pct", "biomass_kg",
     "air_temp_c", "humidity_pct", "water_l", "egg_count",
     "growth_stage", "soil_moisture_pct", "nitrogen_ppm", "irrigation_status",
-    "disease_risk_pct", "harvest_readiness_pct",
+    "disease_risk_pct", "harvest_readiness_pct", "co2_ppm",
 ]
 
 # metric -> (min, max, step, drift). drift is a constant per-tick bias
@@ -53,6 +53,14 @@ _NUMERIC_METRICS: dict[str, dict[str, tuple[float, float, float, float]]] = {
         "disease_risk_pct": (0.0, 100.0, 2.0, 0.0),
         "harvest_readiness_pct": (0.0, 100.0, 1.5, 0.8),
     },
+    "greenhouse": {
+        "air_temp_c": (10.0, 40.0, 0.5, 0.0),
+        "humidity_pct": (30.0, 95.0, 2.0, 0.0),
+        "soil_moisture_pct": (20.0, 100.0, 3.0, 0.0),
+        "co2_ppm": (200.0, 1000.0, 20.0, 0.0),
+        "disease_risk_pct": (0.0, 100.0, 2.0, 0.0),
+        "harvest_readiness_pct": (0.0, 100.0, 1.5, 0.8),
+    },
 }
 
 _DEFAULT_SEEDS: dict[str, dict[str, float]] = {
@@ -66,6 +74,10 @@ _DEFAULT_SEEDS: dict[str, dict[str, float]] = {
     },
     "rice_field": {"soil_moisture_pct": 65.0, "nitrogen_ppm": 45.0},
     "fruit_orchard": {"soil_moisture_pct": 55.0, "disease_risk_pct": 10.0, "harvest_readiness_pct": 20.0},
+    "greenhouse": {
+        "air_temp_c": 23.0, "humidity_pct": 60.0, "soil_moisture_pct": 55.0,
+        "co2_ppm": 750.0, "disease_risk_pct": 10.0, "harvest_readiness_pct": 20.0,
+    },
 }
 
 
@@ -122,10 +134,10 @@ def next_reading(asset_type: str, previous: dict | None) -> dict:
         base_eggs = seeds.get("egg_count", 35) if base_eggs is None else base_eggs
         row["egg_count"] = max(0, int(round(base_eggs)) + random.randint(-4, 4))
 
-    if asset_type in ("rice_field", "fruit_orchard"):
+    if asset_type in ("rice_field", "fruit_orchard", "greenhouse"):
         row["growth_stage"] = _next_growth_stage(previous.get("growth_stage"))
 
-    if asset_type == "rice_field":
+    if asset_type in ("rice_field", "greenhouse"):
         row["irrigation_status"] = _next_irrigation_status(row["soil_moisture_pct"])
 
     return row

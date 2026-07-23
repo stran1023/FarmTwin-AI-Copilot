@@ -36,6 +36,12 @@ class TestNextReadingBounds:
             ("rice_field", "nitrogen_ppm", 0.0, 100.0),
             ("fruit_orchard", "disease_risk_pct", 0.0, 100.0),
             ("fruit_orchard", "harvest_readiness_pct", 0.0, 100.0),
+            ("greenhouse", "air_temp_c", 10.0, 40.0),
+            ("greenhouse", "humidity_pct", 30.0, 95.0),
+            ("greenhouse", "soil_moisture_pct", 20.0, 100.0),
+            ("greenhouse", "co2_ppm", 200.0, 1000.0),
+            ("greenhouse", "disease_risk_pct", 0.0, 100.0),
+            ("greenhouse", "harvest_readiness_pct", 0.0, 100.0),
         ],
     )
     def test_metric_stays_within_bounds_over_many_ticks(self, asset_type, metric, low, high):
@@ -104,6 +110,27 @@ class TestIrrigationStatus:
         reading = next_reading("rice_field", {"soil_moisture_pct": 80.0})
         if reading["soil_moisture_pct"] >= 40.0:
             assert reading["irrigation_status"] == "inactive"
+
+
+class TestGreenhouse:
+    def test_growth_stage_advances_like_rice_and_orchard(self):
+        reading = None
+        seen_indices = []
+        for _ in range(200):
+            reading = next_reading("greenhouse", reading)
+            idx = GROWTH_STAGES.index(reading["growth_stage"])
+            if seen_indices:
+                assert idx - seen_indices[-1] in (0, 1)
+            seen_indices.append(idx)
+
+    def test_irrigation_status_derives_from_soil_moisture(self):
+        reading = next_reading("greenhouse", {"soil_moisture_pct": 25.0})
+        if reading["soil_moisture_pct"] < 40.0:
+            assert reading["irrigation_status"] == "active"
+
+    def test_co2_ppm_is_null_for_other_asset_types(self):
+        reading = next_reading("fish_pond", None)
+        assert reading["co2_ppm"] is None
 
 
 class TestEggCount:
