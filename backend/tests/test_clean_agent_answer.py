@@ -13,10 +13,9 @@ from app.main import _clean_agent_answer
 
 class TestExplicitAnswerTag:
     def test_strips_everything_before_answer_tag(self):
-        # No closing </answer> tag: real captured samples never included one
-        # (see app/main.py's _clean_agent_answer -- only the opening tag is
-        # ever matched), so this fixture matches the shape the function was
-        # actually built to handle rather than a hypothetical one.
+        # No closing </answer> tag in this fixture -- covered separately by
+        # test_strips_closing_answer_tag_too below, since feat-052 made the
+        # agent start emitting one.
         raw = (
             "I'll query the semantic view for FP-001's latest readings.\n"
             "<answer>Dissolved oxygen has crashed to 2.0 mg/L, well below "
@@ -28,6 +27,30 @@ class TestExplicitAnswerTag:
             "the 3.5 mg/L critical threshold."
         )
         assert "I'll query" not in cleaned
+
+    def test_strips_closing_answer_tag_too(self):
+        # feat-052 (2026-07-19) made FARM_OPS_AGENT always wrap its final
+        # answer in explicit <answer>...</answer> tags with zero exceptions.
+        # Real captured samples since then (progress.md Session 029, Part 4
+        # verification) do include a closing tag -- _clean_agent_answer only
+        # ever stripped the opening one, so the closing tag leaked verbatim
+        # into every /copilot/ask, /workflow/run summary, and
+        # /briefing/today response. Live-discovered 2026-07-24 while
+        # verifying feat-043/feat-044.
+        raw = (
+            "I will review the latest readings for each farm asset.\n\n"
+            "<answer>\n"
+            "**Tilapia Pond A**: dissolved oxygen has crashed to 2.0 mg/L, "
+            "well below the 3.5 mg/L critical threshold.\n"
+            "</answer>"
+        )
+        cleaned = _clean_agent_answer(raw)
+        assert cleaned == (
+            "**Tilapia Pond A**: dissolved oxygen has crashed to 2.0 mg/L, "
+            "well below the 3.5 mg/L critical threshold."
+        )
+        assert "</answer>" not in cleaned
+        assert "I will review" not in cleaned
 
 
 class TestMarkdownHeadingShape:

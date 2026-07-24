@@ -4,7 +4,15 @@ set -e
 echo "=== Harness Initialization ==="
 
 echo "=== cd backend && python -m compileall app ==="
-(cd backend && python -m compileall app)
+if command -v python > /dev/null 2>&1; then
+  COMPILEALL_PYBIN=python
+elif command -v python3 > /dev/null 2>&1; then
+  COMPILEALL_PYBIN=python3
+else
+  echo "Neither python nor python3 found on PATH" >&2
+  exit 1
+fi
+(cd backend && "$COMPILEALL_PYBIN" -m compileall app)
 
 if [ -x backend/venv/Scripts/python.exe ]; then
   PYBIN=backend/venv/Scripts/python.exe

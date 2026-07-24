@@ -177,6 +177,8 @@ def _clean_agent_answer(text: str) -> str:
     assuming any one is guaranteed."""
     if "<answer>" in text:
         text = text.split("<answer>", 1)[1]
+        if "</answer>" in text:
+            text = text.split("</answer>", 1)[0]
     else:
         match = _MARKDOWN_HEADING_RE.search(text)
         if match:
