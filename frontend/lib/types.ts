@@ -42,6 +42,8 @@ export interface AssetDetail extends Asset {
   history: HistoryEvent[]
 }
 
+export type StockAvailability = "in_stock" | "low_stock" | "out_of_stock"
+
 export interface Recommendation {
   id: string
   asset_id: string
@@ -53,6 +55,7 @@ export interface Recommendation {
   expected_impact: string
   confidence: number
   status: RecommendationStatus
+  stock_availability?: StockAvailability | null
   decided_by?: string
   decided_at?: string
 }

@@ -9,6 +9,7 @@ import type {
   Reading,
   Recommendation,
   RecommendationStatus,
+  StockAvailability,
   Briefing,
   CopilotAnswer,
   Task,
@@ -127,6 +128,7 @@ interface BackendRecommendation {
   status: "pending_approval" | "approved" | "rejected"
   approved_by: string | null
   approved_at: string | null
+  stock_availability: StockAvailability | null
 }
 
 interface BackendWeatherReading {
@@ -245,6 +247,7 @@ async function mapRecommendation(r: BackendRecommendation): Promise<Recommendati
     expected_impact: r.expected_impact,
     confidence: r.confidence_pct / 100,
     status: mapRecStatus(r.status),
+    stock_availability: r.stock_availability ?? undefined,
     decided_by: r.approved_by ?? undefined,
     decided_at: r.approved_at ?? undefined,
   }

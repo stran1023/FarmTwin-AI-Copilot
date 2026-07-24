@@ -3,6 +3,45 @@
 ## Current Verified State
 
 - Last Updated: 2026-07-24
+- **Session 030 (2026-07-24): implemented feat-043 and feat-044 application
+  code.** Both features' CoCo prompts (Parts 6 and 7) had already been run
+  and verified in Session 029. This session implemented the remaining backend
+  + frontend application code:
+
+  **feat-043 (inventory/stock-aware recommendations):**
+  - `recommendation_parser.py`: added `Stock Availability` to `_LINE_RE` and
+    `_LABEL_TO_KEY`; kept `_REQUIRED_KEYS` explicit (without `stock_availability`)
+    for backward compat with older rows; added normalization to
+    `in_stock`/`low_stock`/`out_of_stock` or None.
+  - `schemas.py`: added `StockAvailability` type alias + optional
+    `stock_availability` field on `Recommendation`.
+  - `main.py`: `_recommendation_from_row` now includes `stock_availability`;
+    `/workflow/run`'s RECOMMENDATIONS INSERT now writes `stock_availability`.
+  - `frontend/lib/types.ts`: added `StockAvailability` type + optional field
+    on `Recommendation` interface.
+  - `frontend/lib/api.ts`: `BackendRecommendation` includes `stock_availability`;
+    `mapRecommendation` maps it through.
+  - `frontend/components/RecommendationCard.tsx`: new `StockBadge` component;
+    `low_stock`/`out_of_stock` shown alongside priority badge (always visible),
+    `in_stock` shown only in expanded detail section.
+  - `tests/test_recommendation_parser.py`: 5 new `TestStockAvailabilityField`
+    cases (low_stock, out_of_stock, in_stock, missing field backward-compat,
+    unrecognized value -> None). 88/88 tests pass.
+
+  **feat-044 (regulatory/withdrawal-period compliance check):**
+  - `main.py`: new `_maybe_log_treatment` helper; `approve_recommendation`
+    calls it after status update. Queries WITHDRAWAL_RULES joined to
+    FARM_ASSETS to get treatments applicable to the approved recommendation's
+    asset_type (withdrawal_days > 0 only), matches against the recommendation
+    text, inserts a TREATMENTS row on match. One treatment logged per
+    approval (first match wins).
+
+  **Verification:** `python3 -m compileall app` clean; `venv/bin/python -m
+  pytest tests -q` 88/88 pass; `node_modules/.bin/tsc --noEmit` clean;
+  `npm run lint` clean; `npm run build` clean (all 5 routes compiled).
+  Live end-to-end verification (live Snowflake account) not run this session
+  -- both features require that to move to `passing` per their verification
+  criteria.
 - **Session 029 (continued, 2026-07-24): drafted CoCo prompts for feat-043
   and feat-044.** User asked to draft prompts for the two still-`not_started`
   features now that feat-048/052/053 are resolved. Added `snowflake/

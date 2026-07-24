@@ -299,15 +299,19 @@
       "description": "FARM_OPS_AGENT and the /workflow/run recommendation pipeline currently recommend actions (add aerator, treat with antibiotic, adjust feed) with no awareness of whether the required item is actually on hand -- a real gap between 'advice' and 'actionable'. Add a new Snowflake INVENTORY table (item_name, category, unit, qty_on_hand, reorder_threshold, last_restocked) via CoCo, seeded with realistic stock levels for items referenced by the demo's existing recommendation content (aerator units, probiotic/antibiotic doses, chicken feed, irrigation parts). Extend FARM_OPS_VIEW (or add a second semantic-view source) so the agent can check stock before/while generating a recommendation, and surface a stock-availability field (in_stock / low_stock / out_of_stock) on each RECOMMENDATIONS row, parsed alongside the existing 6 fields. Where a recommended action's input is out of stock, the recommendation text should say so explicitly (e.g. 'requires probiotic treatment -- 0 units in stock, reorder before acting') rather than recommending an action with no way to execute it.",
       "user_visible_behavior": "Recommendation cards show whether the item/input a recommendation depends on is actually in stock, and the AI's own recommendation text acknowledges when it isn't (e.g. flags a reorder need) instead of silently assuming unlimited supply.",
       "dependencies": ["feat-012"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "Blocked until the user runs the new CoCo prompt (snowflake/coco-prompts.md Part 6) creating/seeding INVENTORY, extending FARM_OPS_VIEW, and updating FARM_OPS_AGENT to emit a 7th Stock Availability field -- this agent cannot create Snowflake objects itself per CLAUDE.md",
         "cd backend && python -m compileall app succeeds",
         "A live /workflow/run call against the live Snowflake account produces at least one RECOMMENDATIONS row whose text/fields correctly reflect a real seeded low-stock or out-of-stock INVENTORY row, cross-checked directly against the INVENTORY table",
         "A live /workflow/run call against a well-stocked item confirms the recommendation does not spuriously flag a stock problem that doesn't exist"
       ],
-      "evidence": [],
-      "notes": "From a 2026-07-19 discussion on strengthening the 'Build Agent Skills or custom skills aligned to the workflow' judging bullet in docs/challenge.md with a second distinct, real-world-grounded Cortex Agent skill (structured inventory lookup, not just text-to-SQL over FARM_OPS_VIEW). CoCo prompt drafted 2026-07-24 as snowflake/coco-prompts.md Part 6 (INVENTORY table seeded with a deliberate antibiotic_dose=0/aerator_unit-low-stock story tied to FP-001's ongoing crisis, plus a 7th 'Stock Availability' recommendation field). Once that prompt is run, this agent's own follow-up work is: recommendation_parser.py needs the 7th field added to _LINE_RE/_LABEL_TO_KEY, schemas.py's Recommendation model needs a stock_availability field, and backend/app/main.py's RECOMMENDATIONS INSERT needs to write it -- not yet started."
+      "evidence": [
+        "CoCo prompts (Part 6, all 5 steps) run and verified by the user -- INVENTORY table (7 rows: aerator_unit low_stock, antibiotic_dose out_of_stock, 5 others in_stock), FARM_OPS_VIEW extended with INVENTORY, FARM_OPS_AGENT updated with 7-field format including Stock Availability. See snowflake/coco-prompts.md Part 6 results.",
+        "Application code implemented (Session 030, 2026-07-24): recommendation_parser.py parses Stock Availability as 7th field (optional, backward-compat); schemas.py Recommendation model has stock_availability field; main.py's _recommendation_from_row and workflow INSERT both write stock_availability; frontend types/api/card all updated. 88/88 backend pytest cases pass, tsc --noEmit clean, npm run lint clean, npm run build clean.",
+        "Live /workflow/run end-to-end verification pending -- required before moving to passing."
+      ],
+      "notes": "From a 2026-07-19 discussion on strengthening the 'Build Agent Skills or custom skills aligned to the workflow' judging bullet in docs/challenge.md with a second distinct, real-world-grounded Cortex Agent skill (structured inventory lookup, not just text-to-SQL over FARM_OPS_VIEW). CoCo prompt run 2026-07-24 as snowflake/coco-prompts.md Part 6. Application code implemented Session 030."
     },
     {
       "id": "feat-044",
@@ -317,15 +321,19 @@
       "description": "Fish and poultry treatments (antibiotics, certain medications) carry a mandatory withdrawal period before the animal/product can be harvested or sold -- recommending a treatment today without flagging when it becomes safe to harvest/sell is a real agricultural compliance gap, not a hypothetical one. Add a new Snowflake WITHDRAWAL_RULES table (treatment_name, asset_type, withdrawal_days) via CoCo, plus a TREATMENTS log table (asset_id, treatment_name, administered_at) recording when a treatment was actually given (written by the approve flow when a recommendation involving a regulated treatment is approved). Extend the recommendation/risk pipeline to check TREATMENTS + WITHDRAWAL_RULES before generating a harvest/sale-related recommendation for an asset under an active withdrawal period, and have the agent surface a clear compliance warning (e.g. 'do not harvest before 2026-07-25 -- 7-day withdrawal period after the 2026-07-18 antibiotic treatment') rather than staying silent on it.",
       "user_visible_behavior": "If an asset was recently given a regulated treatment, the AI Copilot and recommendation cards clearly show the earliest safe harvest/sale date instead of staying silent on a real compliance constraint.",
       "dependencies": ["feat-012"],
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "Blocked until the user runs the new CoCo prompt (snowflake/coco-prompts.md Part 7) creating/seeding WITHDRAWAL_RULES + TREATMENTS, extending FARM_OPS_VIEW, and updating FARM_OPS_AGENT's compliance-check instructions -- this agent cannot create Snowflake objects itself per CLAUDE.md",
         "cd backend && python -m compileall app succeeds",
         "A live test: approve a recommendation that logs a regulated treatment for a real asset, then confirm a subsequent live /workflow/run or /copilot/ask response for that asset correctly surfaces the real computed earliest-safe-harvest date (administered_at + withdrawal_days), not a generic disclaimer",
         "Confirm an asset with no recent regulated treatment produces no compliance warning (no false positives)"
       ],
-      "evidence": [],
-      "notes": "From the same 2026-07-19 discussion as feat-043 -- the stronger 'guardrails' framing for docs/challenge.md's Technical Execution criterion. CoCo prompt drafted 2026-07-24 as snowflake/coco-prompts.md Part 7 -- pre-seeds one real active withdrawal scenario (a recent antibiotic_treatment for FP-001) so the compliance warning is immediately live-demoable without needing the approve-flow write-through built first. Once that prompt is run, this agent's own follow-up work is: POST /recommendations/{id}/approve needs to write a TREATMENTS row when a regulated treatment is approved (per this feature's own description) -- not yet started."
+      "evidence": [
+        "CoCo prompts (Part 7, all 5 steps) run and verified by the user -- WITHDRAWAL_RULES (5 rows: antibiotic_treatment/fish_pond 14 days, probiotic_treatment/fish_pond 0 days, newcastle_vaccine/chicken_coop 21 days, fungicide_sulfur/greenhouse 3 days, copper_fungicide/fruit_orchard 7 days), TREATMENTS (1 pre-seeded row: FP-001 antibiotic_treatment 2026-07-18, earliest safe harvest 2026-08-01), FARM_OPS_VIEW extended, FARM_OPS_AGENT updated. See snowflake/coco-prompts.md Part 7 results.",
+        "Application code implemented (Session 030, 2026-07-24): main.py's approve_recommendation now calls _maybe_log_treatment, which joins WITHDRAWAL_RULES to FARM_ASSETS by asset_type to get applicable treatments (withdrawal_days > 0), matches treatment names (underscore and space variants) against the recommendation text, inserts a TREATMENTS row on first match. python -m compileall app: clean.",
+        "Live approve-flow verification (confirm TREATMENTS row written for an antibiotic recommendation) pending -- required before moving to passing."
+      ],
+      "notes": "From the same 2026-07-19 discussion as feat-043. CoCo prompt run 2026-07-24 as snowflake/coco-prompts.md Part 7. Application code implemented Session 030. The pre-seeded TREATMENTS row (FP-001, 2026-07-18) means the agent's compliance warning is already live-demoable for the fish pond even before a new approve-flow write-through is exercised."
     },
     {
       "id": "feat-045",

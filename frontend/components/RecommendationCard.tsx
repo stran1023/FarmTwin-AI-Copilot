@@ -1,10 +1,35 @@
 "use client"
 
 import { type ReactNode, useState } from "react"
-import { Check, ChevronDown, ChevronUp, Sparkles, X } from "lucide-react"
-import type { Recommendation } from "@/lib/types"
+import { Check, ChevronDown, ChevronUp, Package, Sparkles, X } from "lucide-react"
+import type { Recommendation, StockAvailability } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { PriorityBadge } from "./RiskBadge"
+
+function StockBadge({ stock }: { stock: StockAvailability }) {
+  if (stock === "in_stock") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-healthy/15 px-2 py-0.5 text-[11px] font-semibold text-healthy">
+        <Package className="size-3" aria-hidden="true" />
+        In stock
+      </span>
+    )
+  }
+  if (stock === "low_stock") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
+        <Package className="size-3" aria-hidden="true" />
+        Low stock
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-critical/15 px-2 py-0.5 text-[11px] font-semibold text-critical">
+      <Package className="size-3" aria-hidden="true" />
+      Out of stock
+    </span>
+  )
+}
 
 interface RecommendationCardProps {
   rec: Recommendation
@@ -54,6 +79,9 @@ export function RecommendationCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <PriorityBadge priority={rec.priority} />
+            {rec.stock_availability && rec.stock_availability !== "in_stock" && (
+              <StockBadge stock={rec.stock_availability} />
+            )}
             <span className="text-xs font-medium text-muted-foreground">{rec.asset_name}</span>
           </div>
           <p className="mt-2 text-sm font-semibold leading-snug text-pretty">{rec.recommendation}</p>
@@ -81,6 +109,14 @@ export function RecommendationCard({
               </span>
             </div>
           </div>
+          {rec.stock_availability && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Stock
+              </span>
+              <StockBadge stock={rec.stock_availability} />
+            </div>
+          )}
         </dl>
       )}
 

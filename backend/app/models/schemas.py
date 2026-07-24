@@ -66,6 +66,9 @@ class AssetHistory(BaseModel):
     notes: str | None = None
 
 
+StockAvailability = Literal["in_stock", "low_stock", "out_of_stock"]
+
+
 class Recommendation(BaseModel):
     recommendation_id: str
     asset_id: str
@@ -79,6 +82,7 @@ class Recommendation(BaseModel):
     status: RecommendationStatus = "pending_approval"
     approved_by: str | None = None
     approved_at: datetime | None = None
+    stock_availability: StockAvailability | None = None
 
 
 class ApprovalRequest(BaseModel):

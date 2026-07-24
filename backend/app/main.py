@@ -213,6 +213,7 @@ def _recommendation_from_row(row: dict) -> Recommendation:
         status=row["STATUS"],
         approved_by=row["APPROVED_BY"],
         approved_at=row["APPROVED_AT"],
+        stock_availability=row.get("STOCK_AVAILABILITY"),
     )
 
 
@@ -290,10 +291,11 @@ async def run_daily_workflow():
 
         for idx, rec in enumerate(recommendation_parser.parse_recommendations(agent_text), start=1):
             rec_id = _recommendation_id(asset_id, now, idx)
+            stock = rec.get("stock_availability")
             snowflake_client.execute(
                 "INSERT INTO RECOMMENDATIONS (recommendation_id, asset_id, created_at, recommendation, "
-                "reason, evidence, priority, expected_impact, confidence_pct, status) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "reason, evidence, priority, expected_impact, confidence_pct, status, stock_availability) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     rec_id,
                     asset_id,
@@ -305,6 +307,7 @@ async def run_daily_workflow():
                     rec["expected_impact"],
                     rec["confidence_pct"],
                     "pending_approval",
+                    stock,
                 ),
             )
             recommendations_created.append(
@@ -319,6 +322,7 @@ async def run_daily_workflow():
                     expected_impact=rec["expected_impact"],
                     confidence_pct=rec["confidence_pct"],
                     status="pending_approval",
+                    stock_availability=stock,
                 )
             )
 
@@ -503,9 +507,36 @@ def _set_recommendation_status(recommendation_id: str, status: str, approved_by:
     return _recommendation_from_row(row)
 
 
+def _maybe_log_treatment(rec: Recommendation) -> None:
+    """When an approved recommendation involves a regulated treatment (one
+    that appears in WITHDRAWAL_RULES with withdrawal_days > 0), write a row
+    to TREATMENTS so subsequent harvest/sale queries can surface the correct
+    earliest-safe date (administered_at + withdrawal_days)."""
+    rules = snowflake_client.run_query(
+        "SELECT wr.TREATMENT_NAME FROM WITHDRAWAL_RULES wr "
+        "JOIN FARM_ASSETS fa ON fa.ASSET_TYPE = wr.ASSET_TYPE "
+        "WHERE fa.ASSET_ID = %s AND wr.WITHDRAWAL_DAYS > 0",
+        (rec.asset_id,),
+    )
+    if not rules:
+        return
+    rec_text = (rec.recommendation or "").lower()
+    for rule in rules:
+        treatment = rule["TREATMENT_NAME"]
+        # Match "antibiotic_treatment" or "antibiotic treatment" (space variant)
+        if treatment.lower() in rec_text or treatment.lower().replace("_", " ") in rec_text:
+            snowflake_client.execute(
+                "INSERT INTO TREATMENTS (asset_id, treatment_name, administered_at) VALUES (%s, %s, %s)",
+                (rec.asset_id, treatment, datetime.now(timezone.utc)),
+            )
+            break
+
+
 @app.post("/recommendations/{recommendation_id}/approve", response_model=Recommendation)
 def approve_recommendation(recommendation_id: str, body: ApprovalRequest = ApprovalRequest()):
-    return _set_recommendation_status(recommendation_id, "approved", body.approved_by)
+    rec = _set_recommendation_status(recommendation_id, "approved", body.approved_by)
+    _maybe_log_treatment(rec)
+    return rec
 
 
 @app.post("/recommendations/{recommendation_id}/reject", response_model=Recommendation)
