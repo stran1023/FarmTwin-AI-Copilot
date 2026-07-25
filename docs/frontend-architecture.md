@@ -1,14 +1,17 @@
 # Frontend architecture & UI/UX flow — FarmTwin AI Copilot
 
-> **Status: as-built, v0 redesign (2026-07-16).** `frontend/` was fully
-> replaced in Session 022 (`feat-039`) by a separately-built,
-> v0.app-generated Next.js frontend (originally `farmtwin-ai-copilot-frontend/`),
-> wired to the real backend. It supersedes the shadcn-free build described
-> in earlier revisions of this doc (Sessions 011-021, `feat-015`-`feat-038`)
-> — that evidence trail still lives in `progress.md` but no longer
-> describes what's on disk. For original design intent (screens, data
-> contract), see `docs/ui-build-plan.md` — still broadly accurate; this
-> doc covers what changed in the redesign.
+> **Status: as-built, v0 redesign (2026-07-16), directory layout refreshed
+> 2026-07-26.** `frontend/` was fully replaced in Session 022 (`feat-039`)
+> by a separately-built, v0.app-generated Next.js frontend (originally
+> `farmtwin-ai-copilot-frontend/`), wired to the real backend. It
+> supersedes the shadcn-free build described in earlier revisions of this
+> doc (Sessions 011-021, `feat-015`-`feat-038`) — that evidence trail
+> still lives in `progress.md` but no longer describes what's on disk.
+> For original design intent (screens, data contract), see
+> `docs/ui-build-plan.md` — still broadly accurate; this doc covers what
+> changed in the redesign, plus everything added since (`GreenhouseMarker`,
+> `feat-048`; `lib/markdown.tsx` + `BriefingOverview.tsx`, later sessions;
+> the Harvest Planner/Scenario Simulator cards, `feat-054`/`feat-055`).
 
 ## Stack
 
@@ -38,14 +41,23 @@ frontend/
     DigitalTwinMap.tsx       map composition + pan/zoom camera + zoom controls
     FarmTerrain.tsx          ground layer: grass grid, dirt paths, farmhouse, well, scenery
     MarkerFrame.tsx          shared marker container (size/shape/ring/selection)
-    FishPondMarker.tsx, ChickenCoopMarker.tsx,
-    RiceFieldMarker.tsx, FruitOrchardMarker.tsx   one SVG illustration per asset type
+    FishPondMarker.tsx, ChickenCoopMarker.tsx, RiceFieldMarker.tsx,
+    FruitOrchardMarker.tsx, GreenhouseMarker.tsx   one SVG illustration per
+                             asset type (Greenhouse added feat-048, 2026-07-19)
     StatusIndicators.tsx    topPriorityAssetId(), color-blind-safe StatusBadge
     WeatherAmbience.tsx      pointer-events-none sun/cloud/rain overlay
     DashboardPanel.tsx       right-panel default content (Screen 2)
-    AssetDetailPanel.tsx     right-panel content when an asset is selected (Screen 3)
+    AssetDetailPanel.tsx     right-panel content when an asset is selected
+                             (Screen 3) — also owns 2 inline subcomponents,
+                             not separate files: HarvestPlannerCard
+                             (feat-054, crop assets only) and
+                             ScenarioSimulatorCard (feat-055, any asset
+                             with an active trackable risk)
     CopilotPanel.tsx         chat UI — used standalone at /copilot, not a persistent overlay
-    BriefingView.tsx         Daily Briefing screen (Screen 5)
+    BriefingView.tsx         Daily Briefing screen (Screen 5) shell
+    BriefingOverview.tsx     prose summary card within BriefingView — sentence-
+                             split via lib/markdown.tsx, same pattern the
+                             Harvest Planner/Scenario Simulator cards reuse
     RecommendationCard.tsx   shared collapsed-by-default recommendation card
     HealthGauge.tsx, RiskBadge.tsx, Card.tsx   presentational primitives
     ui/button.tsx            shadcn/ui primitive
@@ -55,6 +67,13 @@ frontend/
     dataCache.ts             module-level fetch cache: dedup, TTL, cross-component invalidate()
     useApiData.ts            React hook over dataCache.ts via useSyncExternalStore
     iso.ts                   shared 2:1 isometric projection math (terrain + markers)
+    markdown.tsx             minimal bold-only markdown + sentence-splitting
+                             for Cortex Agent prose (briefing/harvest-plan/
+                             scenario narratives) — deliberately not a full
+                             markdown library; agent prompts are constrained
+                             to plain sentences, no headings/lists, so this
+                             is all that's needed (see feat-054's notes for
+                             the live bug this constraint was added to fix)
     utils.ts                 cn() class-merge helper (shadcn convention)
 ```
 

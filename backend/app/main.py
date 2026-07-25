@@ -769,7 +769,7 @@ def get_dashboard_summary():
 async def ask_copilot(body: CopilotQuestion):
     """Free-form Q&A, grounded in the farm's real current state via the
     same semantic view /workflow/run and /briefing/today use. Per
-    docs/FarmTwin-AI-Copilot.md's 'Decision Intelligence' principle, every
+    docs/FarmTwin-AI-Copilot.md's decision-intelligence thesis, every
     answer should end with a concrete next step, not just an observation."""
     prompt = (
         f"{body.question}\n\n"

@@ -1,20 +1,29 @@
 # UI build plan — FarmTwin AI Copilot
 
-> **Status: this is the current target.** It replaces the prior 3-screen
-> rice-cooperative plan (card list → risk/work-order detail → briefing,
-> real Leaflet/OpenStreetMap Screen 1). That build shipped and passed
-> (`feat-001`–`feat-007`); its evidence lives in `progress.md` under
-> "Legacy: rice-cooperative build (superseded 2026-07-14)." The map
-> approach explicitly changes here: **isometric digital twin, not real
-> geography** — confirmed with the user on 2026-07-14 over the working
-> Leaflet/OSM implementation.
+> **Status: original target design (2026-07-14), corrected in place
+> 2026-07-26.** It replaces the prior 3-screen rice-cooperative plan (card
+> list → risk/work-order detail → briefing, real Leaflet/OpenStreetMap
+> Screen 1). That build shipped and passed (`feat-001`–`feat-007`); its
+> evidence lives in `progress.md` under "Legacy: rice-cooperative build
+> (superseded 2026-07-14)." The map approach explicitly changes here:
+> **isometric digital twin, not real geography** — confirmed with the
+> user on 2026-07-14 over the working Leaflet/OSM implementation. Screens
+> 1-5 below shipped close to spec; the two corrections inline are a 5th
+> asset type (Greenhouse) and the Screen 4 Copilot layout decision, which
+> was actually resolved differently than "decide at implementation time"
+> implied. For the as-built frontend (directory layout, real component
+> list), see `docs/frontend-architecture.md` — that's the more current
+> reference; this doc is still accurate for screen intent and the
+> underlying data model.
 
-Scope: one real farm, four heterogeneous assets (Fish Pond, Chicken Coop,
-Rice Field, Fruit Orchard), one Cortex Agent producing structured
-recommendations. Per `docs/FarmTwin-AI-Copilot.md`'s core philosophy: **the
-AI is the primary product** — the digital twin and dashboard exist to give
-the AI context, not the other way around. Don't build any screen that could
-ship as "just a dashboard with a chatbot bolted on."
+Scope: one real farm, **five** heterogeneous assets (Fish Pond, Chicken
+Coop, Rice Field, Fruit Orchard, Greenhouse — added `feat-048`,
+2026-07-19), one Cortex Agent (two distinct tool types: live-data lookup
+and best-practice search) producing structured recommendations. Per
+`docs/FarmTwin-AI-Copilot.md`'s core philosophy: **the AI is the primary
+product** — the digital twin and dashboard exist to give the AI context,
+not the other way around. Don't build any screen that could ship as "just
+a dashboard with a chatbot bolted on."
 
 ## Demo narrative (say this out loud during judging)
 
@@ -36,7 +45,8 @@ clear story beats four simultaneous alerts.
 **Purpose:** establish "this is a living farm," not a list of database rows.
 
 - Isometric 2D layout, one interactive object per asset (Fish Pond, Chicken
-  Coop, Rice Field, Fruit Orchard), positioned via `FARM_ASSETS.grid_x/grid_y`
+  Coop, Rice Field, Fruit Orchard, Greenhouse), positioned via
+  `FARM_ASSETS.grid_x/grid_y`
 - Color-coded per asset: green (healthy) / yellow (needs attention) / red
   (critical) — driven by that asset's latest `ASSET_RISK_ASSESSMENTS.risk_level`
 - **Hover:** asset name, health score, current status, latest alert (small
@@ -47,14 +57,11 @@ clear story beats four simultaneous alerts.
 - Data source: `GET /assets` — asset id/type/name/grid position/health
   score/status/latest risk level
 
-**Open technical decision (resolve at implementation time, not blocking the
-feature list):** how to render the isometric layout — hand-rolled CSS
-(`transform: rotateX/rotateZ` grid, cheapest, matches "Isometric 2D" in the
-doc's tech stack) vs. a small isometric/2.5D rendering library vs. sprite
-tiles. Default to plain CSS/SVG unless a session finds a concrete reason
-not to — keeps the dependency footprint small, consistent with the prior
-build's bias toward minimal new packages (e.g. Leaflet was chosen partly
-because it needed no API key).
+**Resolved (was "open technical decision"):** hand-rolled SVG, not a
+library — `DigitalTwinMap.tsx` layers a real pan/zoom camera
+(`useMapCamera`) and a fixed-size "world stage" (`lib/iso.ts`) over plain
+SVG terrain/markers. No isometric-map library, no canvas/game engine. See
+`docs/frontend-architecture.md` for the full as-built breakdown.
 
 ---
 
@@ -65,7 +72,7 @@ the vision doc's dashboard requirement.
 
 Display:
 
-- Overall Farm Health Score (aggregate across all 4 assets)
+- Overall Farm Health Score (aggregate across all 5 assets)
 - Active Alerts (derived: latest `ASSET_RISK_ASSESSMENTS` at high/critical)
 - Tasks Due Today (derived: `RECOMMENDATIONS` with `status = 'pending_approval'`)
 - Farm Statistics (asset count, simple per-type summary)
@@ -105,23 +112,37 @@ Panels:
 5. **Prediction** — short-horizon forecast for this asset (e.g. "if this
    trend continues, dissolved oxygen drops below safe levels within 18
    hours")
-6. **History** — recent `ASSET_HISTORY` entries (yield, production,
+6. **Harvest Planner** (`feat-054`, crop assets only — rice field, orchard,
+   greenhouse) — deterministic readiness-trend ETA ("ready now" or a real
+   projected days-until-threshold), agent-narrated. Not shown for fish
+   pond/chicken coop, which have no harvest-readiness concept.
+7. **Scenario Simulator** (`feat-055`) — pick a real candidate
+   intervention (or "do nothing") for this asset's current risk, see a
+   6h/24h projected-outcome comparison, agent-narrated. Only renders when
+   the asset has an active, trackable risk.
+8. **History** — recent `ASSET_HISTORY` entries (yield, production,
    biomass, as applicable to the asset type)
 
 Data source: `GET /assets/{id}` (readings + risk + history) and
 `GET /assets/{id}/recommendations` (structured cards). Approve/reject:
 `POST /recommendations/{id}/approve` / `/reject` — real Snowflake
 write-back, same non-negotiable proof-of-loop requirement as the prior
-build.
+build. Harvest Planner: `GET /assets/{id}/harvest-plan`. Scenario
+Simulator: `POST /assets/{id}/simulate`.
 
 ---
 
 ## Screen 4 — AI Copilot panel
 
 **Purpose:** the literal center of the application, per the vision doc's
-core philosophy. Not a screen you visit occasionally — a persistent surface
-(side panel or dedicated route, decide at implementation time based on
-layout constraints) that:
+core philosophy.
+
+**Resolved (was "decide at implementation time"):** a dedicated `/copilot`
+route (`CopilotPanel.tsx`), not a persistent side panel — conversation
+state resets on navigation away. This is a known, deliberate deviation
+from "not a screen you visit occasionally," documented (not silently
+made) in `docs/frontend-architecture.md`, which flags it as open for a
+future decision if it matters for the demo. The route:
 
 - Surfaces a prioritized, farm-wide list of structured recommendations
   (same 6-field format as Screen 3, but cross-asset and priority-sorted)
@@ -129,8 +150,9 @@ layout constraints) that:
   questions in `docs/FarmTwin-AI-Copilot.md` ("What should I do today?",
   "Should I feed the fish?", "What happens if tomorrow reaches 37°C?") are
   the acceptance bar, not aspirational copy
-- Every response ends with actionable next steps, per "Decision
-  Intelligence": answer *what should I do*, not *what is happening*
+- Every response ends with actionable next steps, per
+  `docs/FarmTwin-AI-Copilot.md`'s decision-intelligence thesis: answer
+  *what should I do*, not *what is happening*
 
 Data source: `POST /copilot/ask` (free-form question → grounded Cortex
 Agent answer) plus the same `GET /dashboard/summary` recommendation feed
@@ -163,14 +185,18 @@ Data source: `GET /briefing/today` (rebuilt on `RECOMMENDATIONS` instead of
 - Keep the "simulated" labeling convention from the prior build for any
   sensor-derived field
 
-## Data contract summary (confirm with backend before building)
+## Data contract summary (as-built — `backend/app/main.py`)
 
 | Endpoint | Method | Returns |
 |---|---|---|
+| `/health` | GET | liveness check |
+| `/workflow/run` | POST | the core Observe→Understand→Recommend→Predict tick: simulates + persists readings, assesses risk, calls the agent for at-risk assets, writes recommendations |
 | `/assets` | GET | all farm assets with latest health/status/risk |
-| `/assets/{id}` | GET | asset detail: readings, risk, history |
+| `/assets/{id}` | GET | asset detail: readings, risk, prediction, history |
+| `/assets/{id}/harvest-plan` | GET | Harvest Planner (`feat-054`) — crop assets only, 400s otherwise |
+| `/assets/{id}/simulate` | POST | Scenario Simulator (`feat-055`) — `{action}` body, `is_available: false` (not an error) when the asset has no active trackable risk |
 | `/assets/{id}/recommendations` | GET | structured recommendation cards for that asset |
-| `/recommendations/{id}/approve` | POST | updates status in Snowflake |
+| `/recommendations/{id}/approve` | POST | updates status in Snowflake, may write a `TREATMENTS` row (`feat-044`) |
 | `/recommendations/{id}/reject` | POST | updates status in Snowflake |
 | `/dashboard/summary` | GET | farm health score, alerts, tasks, weather, top recommendations, asset overview |
 | `/copilot/ask` | POST | free-form question → grounded Cortex Agent answer |
