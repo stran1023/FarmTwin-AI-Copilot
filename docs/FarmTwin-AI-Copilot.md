@@ -2,7 +2,7 @@
 
 > Architecture reference — from *monitoring* to *decision intelligence*.
 > Built for the Snowflake AI Hackathon on Snowflake CoCo CLI, Cortex AI,
-> and Agent Skills. Last synced to the shipped system: 2026-07-26 — see
+> and Agent Skills. Last synced to the shipped system: 2026-07-27 — see
 > `docs/architecture.md` for full current system state and
 > `feature_list.json`/`progress.md` for the real evidence trail.
 
@@ -10,7 +10,7 @@
 [Design Cycle](#design-cycle) · [Farm Assets & Digital Twin](#farm-assets--digital-twin) ·
 [Agent Architecture](#agent-architecture) · [Recommendation Format](#recommendation-format) ·
 [Data Flow & Execution Lifecycle](#data-flow--execution-lifecycle) ·
-[Product Surfaces](#product-surfaces) · [Roadmap](#roadmap) ·
+[Product Surfaces](#product-surfaces) · [Scope Decisions](#scope-decisions) ·
 [Technical Stack](#technical-stack) · [Principles & Success Criteria](#principles--success-criteria)
 
 ---
@@ -54,6 +54,7 @@ flowchart LR
         RISK[risk_engine.py]
         HP[harvest_planner.py]
         SE[scenario_engine.py]
+        YE[yield_estimator.py]
     end
     AGENT["FARM_OPS_AGENT<br/>(Snowflake Cortex Agent)"]
     DB[("Snowflake<br/>CLIMATE_AG_COPILOT.OPS<br/>10 tables + FARM_OPS_VIEW")]
@@ -64,6 +65,7 @@ flowchart LR
     API --> RISK
     API --> HP
     API --> SE
+    API --> YE
     API <-->|"ask_agent(prompt)"| AGENT
     AGENT <-->|query_farm_ops,<br/>search_agronomy| DB
     API <-->|reads / writes| DB
@@ -97,7 +99,7 @@ flowchart LR
 | Observe | Simulate + persist the next sensor reading | `asset_simulator.py` |
 | Understand | Rule-based risk assessment — deterministic, no LLM call needed | `risk_engine.py` |
 | Recommend | Real Cortex Agent call, only for assets flagged at medium+ risk, parsed into the 6-field format | `cortex_agent_client.py` |
-| Predict | Trend projection, harvest ETA, or what-if comparison — computed deterministically, agent narrates | `risk_engine.py`, `harvest_planner.py`, `scenario_engine.py` |
+| Predict | Trend projection, harvest ETA, what-if comparison, or yield estimate — computed deterministically, agent narrates | `risk_engine.py`, `harvest_planner.py`, `scenario_engine.py`, `yield_estimator.py` |
 
 ---
 
@@ -171,9 +173,11 @@ flowchart LR
     SA --> NOTES[("AGRONOMY_NOTES")]
     BACKEND[FastAPI Backend] --> HP[harvest_planner.py]
     BACKEND --> SE[scenario_engine.py]
+    BACKEND --> YE[yield_estimator.py]
     BACKEND --> OM["Open-Meteo<br/>(external API)"]
     HP --> READ[("ASSET_READINGS")]
     SE --> READ
+    YE --> HIST[("ASSET_HISTORY")]
 ```
 
 | Integration | Type | Grounds answers in | Used for |
@@ -182,6 +186,7 @@ flowchart LR
 | `search_agronomy` | Cortex Search | `AGRONOMY_NOTES` — best-practice knowledge base | General agronomy/veterinary guidance, distinct from this farm's own history |
 | Harvest Planner | Deterministic Python (not a Cortex tool) | `ASSET_READINGS` trend + `HARVEST_RULES` | Readiness ETA — computed, then narrated, never LLM-guessed |
 | Scenario Simulator | Deterministic Python (not a Cortex tool) | `ASSET_READINGS` trend + effect-rate constants | What-if intervention comparison |
+| Yield Estimation | Deterministic Python (not a Cortex tool) | `ASSET_HISTORY` (real per-cycle yield records) + current health score | Next-cycle yield estimate, all 5 asset types |
 | Open-Meteo | External REST API | Live weather forecast | Ingested into `WEATHER_READINGS` every tick |
 
 ### Skills: brainstormed vs. built
@@ -202,14 +207,17 @@ capability wearing different names:
 | Harvest Planner | ✅ Built (`feat-054`) | Deterministic Python, agent narrates — not a Cortex tool (see below) |
 | Scenario Simulator | ✅ Built (`feat-055`) | Deterministic Python, agent narrates — not a Cortex tool |
 
-**Why Harvest Planner and Scenario Simulator aren't Cortex tools:** both
-need multi-step numeric projection (a readiness-trend ETA; a what-if
-comparison), and this project's own testing found multi-step
-extrapolation to be a weaker spot for LLM reasoning than the
-single-value lookups `query_farm_ops` handles well. So the math is
-computed deterministically in backend Python and only handed to the
-agent to narrate. Full reasoning: `feature_list.json` `feat-054`/`feat-055`,
-`progress.md`'s 2026-07-25 session.
+**Why Harvest Planner, Scenario Simulator, and Yield Estimation
+(`feat-056`) aren't Cortex tools:** all three need real arithmetic (a
+readiness-trend ETA; a what-if comparison; a health-adjusted historical
+average) — this project's own testing found that kind of computation a
+weaker spot for LLM reasoning than the single-value lookups
+`query_farm_ops` handles well. So every one of them computes
+deterministically in backend Python and only hands the agent the
+finished numbers to narrate — the agent is never asked to calculate,
+only explain. Full reasoning: `feature_list.json`
+`feat-054`/`feat-055`/`feat-056`, `progress.md`'s 2026-07-25 and
+2026-07-27 sessions.
 
 ### Memory model
 
@@ -304,8 +312,8 @@ sequenceDiagram
     B-->>W: DailyBriefing summary
 ```
 
-**The interactive path** (`POST /copilot/ask`, or Harvest
-Planner/Scenario Simulator) — one grounded question, one grounded
+**The interactive path** (`POST /copilot/ask`, or Harvest Planner/Scenario
+Simulator/Yield Estimation) — one grounded question, one grounded
 answer, no persisted state between calls:
 
 ```mermaid
@@ -332,7 +340,7 @@ sequenceDiagram
 |---|---|
 | **Digital Twin** (home) | Isometric map, one object per asset, color-coded, hover/click into detail |
 | **Dashboard** | Answers "How is my farm doing today?" in seconds: health score, active alerts, tasks due, weather, top recommendations |
-| **Asset Detail** | Readings, AI analysis, recommendations, Harvest Planner, Scenario Simulator, history |
+| **Asset Detail** | Readings, AI analysis, recommendations, Harvest Planner, Scenario Simulator, Yield Estimate, history |
 | **AI Copilot** | Free-form Q&A, grounded in current farm state, dedicated route |
 | **Daily Briefing** | Today's approved/rejected recommendations, generated summary |
 
@@ -341,16 +349,31 @@ detail (directory layout, data-mapping conventions): `docs/frontend-architecture
 
 ---
 
-## Roadmap
+## Scope Decisions
 
-Not yet built, no committed timeline:
+Every item originally listed as a "Future Feature" has now been
+resolved (triaged 2026-07-27) — 1 shipped, 5 explicitly ruled out. Kept
+here, not just in `progress.md`'s session log, so none of them get
+re-proposed without the reasoning below:
 
-- Disease prediction
-- Yield estimation
-- Cost optimization
-- Resource planning
-- Water usage optimization
-- Autonomous daily planning
+- ~~Yield estimation~~ — shipped as **Yield Estimation**, `feat-056`
+  (2026-07-27): `estimate = mean(this asset's real ASSET_HISTORY yield
+  records) × (current health_score / 100)`, all 5 asset types
+- Disease prediction — not built: already covered by
+  `risk_engine.predict_trend` and Scenario Simulator's `disease_risk_pct`
+  projection
+- Cost optimization — not built: no cost/$ data exists anywhere in the
+  schema; considered and passed over once already (`feat-053`'s notes)
+- Resource planning — not built: too vague to be more than
+  `query_farm_ops` under a new name, same redundancy pattern as the
+  Agent Skills table above
+- Water usage optimization — not built: `irrigation_status` is boolean
+  (active/inactive), not a volume — nothing to optimize without new
+  simulated data
+- Autonomous daily planning — **actively avoid**: contradicts a real
+  scope decision already made (every recommendation requires human
+  approve/reject; this project is "Domain-Specific AI Copilot," not
+  "Intelligent Workflow Automation")
 
 ---
 

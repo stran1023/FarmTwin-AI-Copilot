@@ -17,6 +17,7 @@ import type {
   Task,
   HistoryEvent,
   Weather,
+  YieldEstimate,
 } from "./types"
 
 /**
@@ -193,6 +194,21 @@ interface BackendScenarioResult {
   available_actions: string[]
   action: string | null
   projections: { horizon_hours: number; without_action: number; with_action: number }[]
+  narrative: string | null
+}
+
+interface BackendYieldEstimate {
+  asset_id: string
+  asset_type: AssetType
+  is_available: boolean
+  reason: string | null
+  metric: string | null
+  unit: string | null
+  baseline: number | null
+  health_score: number | null
+  estimated_yield: number | null
+  confidence_pct: number | null
+  sample_size: number | null
   narrative: string | null
 }
 
@@ -471,6 +487,24 @@ export async function simulateScenario(assetId: string, action: string | null): 
     available_actions: r.available_actions,
     action: r.action ?? undefined,
     projections: r.projections,
+    narrative: r.narrative ?? undefined,
+  }
+}
+
+// Applies to all 5 asset types -- unlike Harvest Planner, the backend
+// never 400s here, it returns is_available: false with a reason instead.
+export async function getYieldEstimate(assetId: string): Promise<YieldEstimate> {
+  const r = await apiFetch<BackendYieldEstimate>(`/assets/${assetId}/yield-estimate`)
+  return {
+    is_available: r.is_available,
+    reason: r.reason ?? undefined,
+    metric: r.metric ?? undefined,
+    unit: r.unit ?? undefined,
+    baseline: r.baseline ?? undefined,
+    health_score: r.health_score ?? undefined,
+    estimated_yield: r.estimated_yield ?? undefined,
+    confidence_pct: r.confidence_pct ?? undefined,
+    sample_size: r.sample_size ?? undefined,
     narrative: r.narrative ?? undefined,
   }
 }

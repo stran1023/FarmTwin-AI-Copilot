@@ -94,20 +94,14 @@ Data source: `GET /dashboard/summary` — aggregates across `FARM_ASSETS`,
 Panels:
 
 1. **Simulated sensor values** — type-specific fields from `ASSET_READINGS`
-   (e.g. Fish Pond: water temp/pH/DO/feed level/biomass; Rice Field: growth
-   stage/soil moisture/nitrogen/irrigation status), clearly labeled
-   "simulated" per the existing convention for non-real data
+   (full per-type field list: `docs/FarmTwin-AI-Copilot.md`'s "Farm Assets
+   & Digital Twin" table), clearly labeled "simulated" per the existing
+   convention for non-real data
 2. **AI analysis** — the Cortex Agent's grounded explanation of this
    asset's current condition (not a repeated sensor dump)
-3. **Recommendation card(s)** — full structured format, one card per
-   pending recommendation:
-   - Recommendation (one sentence)
-   - Reason
-   - Evidence
-   - Priority (low/medium/high)
-   - Expected Impact
-   - Confidence (%)
-   - Approve / Reject buttons
+3. **Recommendation card(s)** — one card per pending recommendation, full
+   6-field structured format (see `docs/FarmTwin-AI-Copilot.md`'s
+   "Recommendation Format") plus Approve / Reject buttons
 4. **Today's tasks** — this asset's pending recommendations, task-framed
 5. **Prediction** — short-horizon forecast for this asset (e.g. "if this
    trend continues, dissolved oxygen drops below safe levels within 18
@@ -120,7 +114,10 @@ Panels:
    intervention (or "do nothing") for this asset's current risk, see a
    6h/24h projected-outcome comparison, agent-narrated. Only renders when
    the asset has an active, trackable risk.
-8. **History** — recent `ASSET_HISTORY` entries (yield, production,
+8. **Yield Estimate** (`feat-056`, all 5 asset types) — deterministic
+   next-cycle yield estimate from this asset's real historical yield
+   record, adjusted for current health, agent-narrated.
+9. **History** — recent `ASSET_HISTORY` entries (yield, production,
    biomass, as applicable to the asset type)
 
 Data source: `GET /assets/{id}` (readings + risk + history) and
@@ -128,7 +125,8 @@ Data source: `GET /assets/{id}` (readings + risk + history) and
 `POST /recommendations/{id}/approve` / `/reject` — real Snowflake
 write-back, same non-negotiable proof-of-loop requirement as the prior
 build. Harvest Planner: `GET /assets/{id}/harvest-plan`. Scenario
-Simulator: `POST /assets/{id}/simulate`.
+Simulator: `POST /assets/{id}/simulate`. Yield Estimate: `GET
+/assets/{id}/yield-estimate`.
 
 ---
 
@@ -195,6 +193,7 @@ Data source: `GET /briefing/today` (rebuilt on `RECOMMENDATIONS` instead of
 | `/assets/{id}` | GET | asset detail: readings, risk, prediction, history |
 | `/assets/{id}/harvest-plan` | GET | Harvest Planner (`feat-054`) — crop assets only, 400s otherwise |
 | `/assets/{id}/simulate` | POST | Scenario Simulator (`feat-055`) — `{action}` body, `is_available: false` (not an error) when the asset has no active trackable risk |
+| `/assets/{id}/yield-estimate` | GET | Yield Estimation (`feat-056`) — all 5 asset types, `is_available: false` (not an error) when no historical yield data exists yet |
 | `/assets/{id}/recommendations` | GET | structured recommendation cards for that asset |
 | `/recommendations/{id}/approve` | POST | updates status in Snowflake, may write a `TREATMENTS` row (`feat-044`) |
 | `/recommendations/{id}/reject` | POST | updates status in Snowflake |

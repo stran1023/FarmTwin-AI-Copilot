@@ -136,3 +136,16 @@ export interface ScenarioResult {
   projections: ScenarioProjection[]
   narrative?: string
 }
+
+export interface YieldEstimate {
+  is_available: boolean
+  reason?: string
+  metric?: string
+  unit?: string
+  baseline?: number
+  health_score?: number
+  estimated_yield?: number
+  confidence_pct?: number
+  sample_size?: number
+  narrative?: string
+}

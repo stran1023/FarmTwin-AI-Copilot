@@ -23,6 +23,7 @@ from app.models.schemas import (
     ScenarioRequest,
     ScenarioResult,
     WeatherReading,
+    YieldEstimate,
 )
 from app.services import (
     asset_simulator,
@@ -33,6 +34,7 @@ from app.services import (
     scenario_engine,
     snowflake_client,
     weather_client,
+    yield_estimator,
 )
 
 app = FastAPI(title="FarmTwin AI Copilot")
@@ -628,6 +630,82 @@ async def simulate_scenario(asset_id: str, body: ScenarioRequest = ScenarioReque
         available_actions=available_actions,
         action=action,
         projections=sim["projections"],
+        narrative=narrative,
+    )
+
+
+@app.get("/assets/{asset_id}/yield-estimate", response_model=YieldEstimate)
+async def get_yield_estimate(asset_id: str):
+    """Deterministic yield estimate (see yield_estimator.py) narrated by
+    the Cortex Agent -- same "Python computes, agent explains" split as
+    get_harvest_plan and simulate_scenario (feat-056; see that feature's
+    notes for why). Applies to all 5 asset types, unlike Harvest Planner
+    (crop-only) -- every type has real ASSET_HISTORY yield records."""
+    asset_rows = snowflake_client.run_query(
+        "SELECT ASSET_ID, ASSET_TYPE, NAME FROM FARM_ASSETS WHERE ASSET_ID = %s", (asset_id,)
+    )
+    if not asset_rows:
+        raise HTTPException(status_code=404, detail=f"No asset found with id {asset_id}")
+    asset_type, name = asset_rows[0]["ASSET_TYPE"], asset_rows[0]["NAME"]
+
+    metric_info = yield_estimator.yield_metric_for(asset_type)
+    if metric_info is None:
+        return YieldEstimate(
+            asset_id=asset_id,
+            asset_type=asset_type,
+            is_available=False,
+            reason=f"No yield metric is tracked for asset type {asset_type}.",
+        )
+    metric_name, _unit = metric_info
+
+    history_rows = snowflake_client.run_query(
+        "SELECT METRIC_VALUE FROM ASSET_HISTORY WHERE ASSET_ID = %s AND METRIC_NAME = %s "
+        "ORDER BY PERIOD_LABEL",
+        (asset_id, metric_name),
+    )
+    historical_values = [float(row["METRIC_VALUE"]) for row in history_rows]
+
+    risk_rows = snowflake_client.run_query(
+        "SELECT RISK_LEVEL FROM ASSET_RISK_ASSESSMENTS WHERE ASSET_ID = %s AND RISK_TYPE NOT LIKE '%%_forecast_24h' "
+        "ORDER BY TS DESC LIMIT 1",
+        (asset_id,),
+    )
+    risk_level = (risk_rows[0]["RISK_LEVEL"] if risk_rows else "low").lower()
+    health_score = _health_score(risk_level)
+
+    est = yield_estimator.estimate_yield(asset_type, historical_values, health_score)
+    if "error" in est:
+        return YieldEstimate(
+            asset_id=asset_id,
+            asset_type=asset_type,
+            is_available=False,
+            reason=est["error"],
+        )
+
+    prompt = (
+        f"For {name} ({asset_id}, a {asset_type.replace('_', ' ')}), a deterministic projection has "
+        "already computed the following real yield estimate -- do not recalculate or second-guess the "
+        f"numbers. This asset's historical average {est['metric'].replace('_', ' ')} across "
+        f"{est['sample_size']} past cycle(s) is {est['baseline']} {est['unit']}. Its current health "
+        f"score is {est['health_score']}/100. Applying that health condition to the historical average "
+        f"gives an estimated next-cycle yield of {est['estimated_yield']} {est['unit']} "
+        f"(confidence {est['confidence_pct']}%). In 3-5 plain sentences (no markdown headings, no "
+        "bullet lists, no 6-field recommendation format), explain what this estimate means and give one "
+        "clear, concrete recommendation grounded in it."
+    )
+    narrative = _clean_agent_answer(await cortex_agent_client.ask_agent(prompt))
+
+    return YieldEstimate(
+        asset_id=asset_id,
+        asset_type=asset_type,
+        is_available=True,
+        metric=est["metric"],
+        unit=est["unit"],
+        baseline=est["baseline"],
+        health_score=est["health_score"],
+        estimated_yield=est["estimated_yield"],
+        confidence_pct=est["confidence_pct"],
+        sample_size=est["sample_size"],
         narrative=narrative,
     )
 

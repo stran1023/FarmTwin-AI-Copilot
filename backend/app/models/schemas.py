@@ -189,3 +189,18 @@ class ScenarioResult(BaseModel):
     action: str | None = None
     projections: list[ScenarioProjection] = []
     narrative: str | None = None
+
+
+class YieldEstimate(BaseModel):
+    asset_id: str
+    asset_type: AssetType
+    is_available: bool
+    reason: str | None = None
+    metric: str | None = None
+    unit: str | None = None
+    baseline: float | None = None
+    health_score: int | None = None
+    estimated_yield: float | None = None
+    confidence_pct: float | None = None
+    sample_size: int | None = None
+    narrative: str | None = None

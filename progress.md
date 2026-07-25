@@ -2,7 +2,80 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-07-25
+- Last Updated: 2026-07-27
+- **Session 034 (2026-07-27): implemented and live-verified feat-056
+  (Yield Estimation).** User asked whether to build the 6 items on
+  `docs/FarmTwin-AI-Copilot.md`'s Roadmap. Triaged all 6: ruled out 5
+  (disease prediction already covered by `predict_trend`/Scenario
+  Simulator; cost optimization needs $ data the schema doesn't track and
+  was already explicitly passed over once, `feat-053`'s notes; resource
+  planning would just be `query_farm_ops` under a new name; water usage
+  optimization needs volume data `irrigation_status` doesn't track;
+  autonomous daily planning directly contradicts the human-approval-loop
+  design this project is built around). Recommended Yield Estimation as
+  the one genuinely new, non-redundant capability. User agreed to build
+  it.
+  - Key finding before scoping: `ASSET_HISTORY` already has 2-3 real
+    per-cycle yield records for every one of the 5 asset types
+    (`biomass_kg_harvested`, `eggs_produced`, `yield_tons_per_ha`,
+    `fruit_production_tons`, `vegetable_yield_kg`) -- no new Snowflake
+    data needed, unlike feat-054.
+  - Design: `estimate = mean(asset's own historical yield records) *
+    (current health_score / 100)` -- deliberately simple, not a fitted
+    model (2-3 historical records per asset would make anything fancier
+    overfitting). No `AskUserQuestion` needed this time (unlike feat-055)
+    -- the formula was derivable from the data and this repo's now-
+    established deterministic-Python-then-agent-narrates pattern, not an
+    open judgment call.
+  - Implemented `backend/app/services/yield_estimator.py`
+    (`estimate_yield()`, `yield_metric_for()`), `schemas.py` gained
+    `YieldEstimate`, `main.py` gained `GET /assets/{id}/yield-estimate`.
+    No CoCo prompt needed (reuses real `ASSET_HISTORY` + the existing
+    `_health_score()`). Proactively applied 2 lessons from feat-054's
+    live bugs instead of rediscovering them: coerced `ASSET_HISTORY
+    .METRIC_VALUE` with `float()` at the query boundary (the
+    Decimal/float class of bug), and constrained the narration prompt to
+    plain sentences, no markdown (the rendering-mismatch class of bug).
+    `cd backend && python -m compileall app`: clean. New
+    `tests/test_yield_estimator.py` (10 cases); full suite 122/122 (112
+    pre-existing + 10 new).
+  - Frontend: `lib/types.ts`/`lib/api.ts` gained `YieldEstimate`/
+    `getYieldEstimate()`; `AssetDetailPanel.tsx` gained a
+    `YieldEstimateCard`, mounted unconditionally for every asset type
+    (backend returns `is_available: false` gracefully rather than
+    400ing, same pattern as `ScenarioSimulatorCard`). `npx tsc --noEmit`,
+    `npm run lint`, `npm run build`: all clean.
+  - Live verification (real backend + live Snowflake account) across all
+    5 real assets, each hand-cross-checked against the real
+    `ASSET_HISTORY` rows: FP-001 (critical, health 10/100) -- baseline
+    246.67 kg, estimated 24.67 kg, narrative correctly tied the collapse
+    to the real Q4-2024 DO-crash precedent (310kg->145kg). CC-001
+    (healthy, 90/100) -- baseline 3750.0 eggs, estimated 3375.0. RF-001
+    (healthy, 90/100) -- baseline 4.6 tons/ha, estimated 4.14. FO-001
+    (healthy, 90/100) -- baseline 5.7 tons, estimated 5.13. GH-001
+    (needs_attention, 60/100) -- baseline 303.33 kg, estimated 182.0,
+    narrative correctly connected it to the real live CO2/humidity/
+    disease readings and the real historical Q1-2025 whitefly-outbreak
+    yield dip (180kg) as a comparable precedent. Every estimate matched
+    hand computation exactly; zero fabricated numbers across all 5.
+  - Live Playwright: Yield Estimate card renders correctly on Tilapia
+    Pond A's detail page below Scenario Simulator, real number + real
+    confidence badge + clean narrated prose, zero console errors, zero
+    regressions.
+  - `feat-056` moved to `passing` in `feature_list.json` (4 evidence
+    entries). `docs/FarmTwin-AI-Copilot.md`'s Roadmap section and
+    `docs/architecture.md`'s "What's real" table updated to reflect the
+    ship and the 5 ruled-out items' reasoning.
+  - Files changed: `feature_list.json`, `backend/app/services/
+    yield_estimator.py` (new), `backend/app/models/schemas.py`,
+    `backend/app/main.py`, `backend/tests/test_yield_estimator.py` (new),
+    `frontend/lib/types.ts`, `frontend/lib/api.ts`,
+    `frontend/components/AssetDetailPanel.tsx`,
+    `docs/FarmTwin-AI-Copilot.md`, `docs/architecture.md`.
+  - Next best step: no unfinished feature currently queued in
+    `feature_list.json`. All 6 original Roadmap items are now resolved
+    (1 shipped, 5 explicitly ruled out with reasoning). Next session
+    should pick a new direction with the user.
 - **Session 033 (2026-07-25): implemented and live-verified feat-055
   (Scenario Simulator), the last of the two Agent Skills scoped in
   Session 032 -- both feat-054 and feat-055 are now `passing`.** No CoCo

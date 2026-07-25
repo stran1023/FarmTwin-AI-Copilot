@@ -11,13 +11,22 @@ import {
   Sparkles,
   Sprout,
   TrendingUp,
+  Wheat,
 } from "lucide-react"
-import type { AssetDetail, HarvestPlan, Recommendation, AssetType, ScenarioResult } from "@/lib/types"
+import type {
+  AssetDetail,
+  HarvestPlan,
+  Recommendation,
+  AssetType,
+  ScenarioResult,
+  YieldEstimate,
+} from "@/lib/types"
 import {
   approveRecommendation,
   getAsset,
   getAssetRecommendations,
   getHarvestPlan,
+  getYieldEstimate,
   rejectRecommendation,
   simulateScenario,
 } from "@/lib/api"
@@ -205,6 +214,61 @@ function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
   )
 }
 
+// Mounts for every asset type -- all 5 have real ASSET_HISTORY yield
+// records, unlike Harvest Planner which is crop-only. The backend
+// gracefully returns is_available: false (not a 400) when unavailable.
+function YieldEstimateCard({ assetId }: { assetId: string }) {
+  const { data: estimate, loading } = useApiData<YieldEstimate>(`yield-estimate:${assetId}`, () =>
+    getYieldEstimate(assetId),
+  )
+
+  if (loading || !estimate) {
+    return (
+      <Card className="p-4">
+        <h3 className="flex items-center gap-2 text-sm font-bold">
+          <Wheat className="size-4 text-primary" aria-hidden="true" />
+          Yield Estimate
+        </h3>
+        <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
+      </Card>
+    )
+  }
+
+  if (!estimate.is_available) {
+    return null
+  }
+
+  return (
+    <Card className="p-4">
+      <h3 className="flex items-center gap-2 text-sm font-bold">
+        <Wheat className="size-4 text-primary" aria-hidden="true" />
+        Yield Estimate
+      </h3>
+      <div className="mt-2 flex items-baseline gap-2">
+        <p className="text-2xl font-extrabold tabular-nums">
+          {estimate.estimated_yield} <span className="text-sm font-medium text-muted-foreground">{estimate.unit}</span>
+        </p>
+        <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+          {estimate.confidence_pct}% confidence
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Historical average {estimate.baseline} {estimate.unit} across {estimate.sample_size} past cycle
+        {estimate.sample_size === 1 ? "" : "s"}, adjusted for current health ({estimate.health_score}/100).
+      </p>
+      {estimate.narrative && (
+        <div className="mt-3 space-y-1.5">
+          {splitIntoSentences(estimate.narrative).map((sentence, i) => (
+            <p key={i} className="text-sm leading-relaxed text-pretty text-muted-foreground">
+              {renderInlineMarkdown(sentence)}
+            </p>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export function AssetDetailPanel({
   assetId,
   onBack,
@@ -338,6 +402,8 @@ export function AssetDetailPanel({
       {HARVEST_PLANNER_TYPES.includes(asset.type) && <HarvestPlannerCard assetId={asset.id} />}
 
       <ScenarioSimulatorCard assetId={asset.id} />
+
+      <YieldEstimateCard assetId={asset.id} />
 
       {/* Recommendations with working approve/reject */}
       <section className="flex flex-col gap-3">

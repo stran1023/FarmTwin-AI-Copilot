@@ -33,7 +33,7 @@ with the user on 2026-07-14.
 ## What's real (as of 2026-07-26)
 
 Everything in the original pivot table has shipped, plus substantially
-more built across `feat-030`-`feat-055`. Current state, not a plan:
+more built across `feat-030`-`feat-056`. Current state, not a plan:
 
 | Piece                              | Status                                       |
 |-------------------------------------|-----------------------------------------------|
@@ -49,18 +49,15 @@ more built across `feat-030`-`feat-055`. Current state, not a plan:
 | Second, distinct Cortex Agent tool (`feat-053`) | Real — `search_agronomy`, Cortex Search over `AGRONOMY_NOTES` (best-practice knowledge, not live data) |
 | Harvest Planner (`feat-054`)        | Real — deterministic readiness-trend ETA (`backend/app/services/harvest_planner.py`) for crop assets, agent narrates |
 | Scenario Simulator (`feat-055`)     | Real — deterministic what-if intervention projection (`backend/app/services/scenario_engine.py`), agent narrates |
+| Yield Estimation (`feat-056`)       | Real — deterministic yield estimate from real `ASSET_HISTORY` records × current health score (`backend/app/services/yield_estimator.py`), agent narrates, all 5 asset types |
 
 ## Farm Assets (replaces the 15-rice-farm model)
 
-One farm, **five** asset instances (Greenhouse added `feat-048`,
-2026-07-19 — the "future assets addable without a schema change" claim
-below was exercised for real, not just planned):
-
-- Fish Pond
-- Chicken Coop
-- Rice Field
-- Fruit Orchard
-- Greenhouse
+One farm, **five** asset instances — Fish Pond, Chicken Coop, Rice Field,
+Fruit Orchard, Greenhouse (added `feat-048`, 2026-07-19, exercising the
+"future assets addable without a schema change" claim below for real,
+not just planned). Per-type tracked fields:
+`docs/FarmTwin-AI-Copilot.md`'s "Farm Assets & Digital Twin" table.
 
 Future assets should be addable without a schema change to the core tables
 (new `asset_type` value + new nullable columns on `ASSET_READINGS` as
@@ -107,38 +104,12 @@ chores).
 
 ## Flow
 
-```
-Simulation engine (per-asset realistic time-series) + Open-Meteo (farm weather)
-        │
-        ▼
-FastAPI /workflow/run — Observe → Understand → Recommend → Predict
-        │
-        ▼
-Snowflake OPS schema (10 tables — see schema above)
-        │
-        ▼
-FARM_OPS_AGENT — query_farm_ops (live data) + search_agronomy (best-practice
-knowledge), structured recommendation: Recommendation/Reason/Evidence/
-Priority/Expected Impact/Confidence, stock-availability- and
-withdrawal-period-aware
-        │
-        ▼
-RECOMMENDATIONS (pending_approval)
-        │
-        ▼
-Next.js: isometric digital twin home (5 assets) → asset detail (readings,
-recommendations, Harvest Planner, Scenario Simulator) → AI Copilot →
-approve/reject
-        │
-        ▼
-GET /briefing/today → daily briefing
-```
-
-12 endpoints total (`backend/app/main.py`): `/health`, `/workflow/run`,
-`/briefing/today`, `/assets`, `/assets/{id}`, `/assets/{id}/harvest-plan`,
-`/assets/{id}/simulate`, `/assets/{id}/recommendations`,
-`/recommendations/{id}/approve`, `/recommendations/{id}/reject`,
-`/dashboard/summary`, `/copilot/ask`.
+Component architecture, the Observe/Understand/Recommend/Predict cycle,
+and full request/response sequence diagrams (Mermaid) live in
+`docs/FarmTwin-AI-Copilot.md`'s System Architecture, Design Cycle, and
+Data Flow & Execution Lifecycle sections — not duplicated here. Endpoint
+list (method + description, one per row): `docs/ui-build-plan.md`'s
+"Data contract summary."
 
 Full screen-by-screen breakdown lives in `docs/ui-build-plan.md`;
 as-built frontend detail (directory layout, data-mapping conventions) in
