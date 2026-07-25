@@ -165,3 +165,27 @@ class HarvestPlan(BaseModel):
     eta_description: str
     basis: str
     narrative: str
+
+
+class ScenarioProjection(BaseModel):
+    horizon_hours: int
+    without_action: float
+    with_action: float
+
+
+class ScenarioRequest(BaseModel):
+    action: str | None = None
+
+
+class ScenarioResult(BaseModel):
+    asset_id: str
+    risk_type: str
+    is_available: bool
+    reason: str | None = None
+    metric: str | None = None
+    current_value: float | None = None
+    baseline_delta_per_hour: float | None = None
+    available_actions: list[str] = []
+    action: str | None = None
+    projections: list[ScenarioProjection] = []
+    narrative: str | None = None

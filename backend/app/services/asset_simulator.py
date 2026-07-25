@@ -81,6 +81,19 @@ _DEFAULT_SEEDS: dict[str, dict[str, float]] = {
 }
 
 
+def metric_bounds() -> dict[str, tuple[float, float]]:
+    """Public (low, high) bounds per reading field, flattened across asset
+    types -- scenario_engine.py uses these to clamp its own projections so
+    a long-horizon linear extrapolation can't project a value the real
+    simulator would never produce (e.g. dissolved oxygen past its ~8 mg/L
+    saturation ceiling)."""
+    return {
+        field: (low, high)
+        for metrics in _NUMERIC_METRICS.values()
+        for field, (low, high, _step, _drift) in metrics.items()
+    }
+
+
 def _walk(value: float, low: float, high: float, step: float, drift: float) -> float:
     value += drift + random.uniform(-step, step)
     return round(max(low, min(high, value)), 2)

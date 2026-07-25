@@ -3,6 +3,87 @@
 ## Current Verified State
 
 - Last Updated: 2026-07-25
+- **Session 033 (2026-07-25): implemented and live-verified feat-055
+  (Scenario Simulator), the last of the two Agent Skills scoped in
+  Session 032 -- both feat-054 and feat-055 are now `passing`.** No CoCo
+  prompt needed for this one: intervention effect rates
+  (`emergency_aeration` on `dissolved_oxygen_mg_l`, etc.) are Python
+  constants in a new `backend/app/services/scenario_engine.py`, per the
+  design decision already made in Session 032.
+  - Added public accessors instead of reaching into other modules'
+    private state: `risk_engine.trend_metric()` (wraps `_TREND_METRIC`)
+    and `asset_simulator.metric_bounds()` (wraps `_NUMERIC_METRICS`).
+    `scenario_engine.simulate()` keys its intervention effects off
+    `risk_type` (reusing `trend_metric()`'s existing risk_type ->
+    (field, direction) mapping), so a what-if projection's target metric
+    always matches what `predict_trend` already tracks for that risk.
+  - Unlike `harvest_planner.py` (which treats one `/workflow/run` tick as
+    one day -- fine for a multi-day ETA), this computes a real **hourly**
+    rate from the actual elapsed time between the two most recent
+    `ASSET_READINGS` timestamps (`main.py`'s `_recent_readings()`
+    extended to include `ts`) -- ticks are demo-triggered, not a strict
+    daily cadence, so an hourly "skip aeration tonight" what-if needs a
+    real hourly rate, not an assumed one.
+  - New `POST /assets/{id}/simulate`: called with no `action` to silently
+    seed the frontend's picker (real candidate actions + baseline, no
+    agent call yet, so page load isn't gated on a live LLM round trip);
+    called again with a chosen action for the narrated with/without
+    comparison. `cd backend && python -m compileall app`: clean. New
+    `tests/test_scenario_engine.py` (12 cases); full suite 112/112
+    (100 pre-existing + 12 new).
+  - **Bug found and fixed during live verification, before it ever
+    reached the frontend:** unbounded linear extrapolation over the 24h
+    horizon projected a physically impossible **21.2 mg/L** dissolved
+    oxygen for Tilapia Pond A with `emergency_aeration` -- the simulator's
+    own realistic ceiling is ~8 mg/L (oxygen saturation). This would have
+    rendered straight into the UI's projection table regardless of how
+    the agent phrased its narrative. Fixed by clamping both projections
+    to each metric's real bounds via the new `metric_bounds()` accessor;
+    added 2 regression tests. Re-verified live: the same call now
+    correctly clamps to 8.0 mg/L at 24h.
+  - Live re-verification through the real REST path (real backend + live
+    Snowflake account): `POST /assets/RF-001/simulate` (no active risk)
+    correctly returned `is_available: false` with a clear reason, no
+    fabricated data. `POST /assets/FP-001/simulate`
+    (`dissolved_oxygen`, critical) with `emergency_aeration` returned
+    correctly-directioned, clamped projections (2.0 -> 6.8 mg/L at 6h,
+    2.0 -> 8.0 mg/L at 24h) with a narrative grounded in the real current
+    value, the clamped numbers, and the real 2/3 aerator stock level --
+    zero fabricated numbers. `POST /assets/GH-001/simulate` (`disease`,
+    medium) with `apply_fungicide` showed the same pattern, including a
+    correct 0.0% floor-clamp at 24h.
+  - `cd frontend && npx tsc --noEmit && npm run lint && npm run build`:
+    all clean. Live Playwright: selected "emergency aeration" on Tilapia
+    Pond A's detail page, clicked Simulate, confirmed the projections
+    grid and narrated prose render correctly (same
+    `splitIntoSentences`/`renderInlineMarkdown` pattern feat-054
+    established -- no raw markdown artifacts), zero console errors.
+  - **Investigated, not fixed, and disclosed rather than hidden:** since
+    this feature has no CoCo prompt, `FARM_OPS_AGENT`'s own instructions
+    know nothing about the dedicated Scenario Simulator view (unlike
+    feat-054's explicit guardrail). Live-tested `POST /copilot/ask "What
+    happens if I skip emergency aeration on Tilapia Pond A tonight?"`
+    through the real REST path: the agent did **not** fabricate a
+    specific numeric projection -- it reasoned qualitatively from real
+    thresholds and cited the real historical Q4-2024 DO-crash precedent
+    (310kg -> 145kg, a real `ASSET_HISTORY` fact) instead. Reasonable,
+    grounded behavior, but not a guaranteed guardrail the way feat-054
+    has one. Flagged to the user as a possible future refinement (a
+    lightweight, instructions-only CoCo prompt, no new tables) rather
+    than unilaterally adding it, since that would reintroduce the CoCo
+    dependency this feature was specifically designed to avoid.
+  - `feat-055` moved to `passing` in `feature_list.json` (5 evidence
+    entries). Files changed: `backend/app/services/scenario_engine.py`
+    (new), `backend/app/services/risk_engine.py`,
+    `backend/app/services/asset_simulator.py`, `backend/app/main.py`,
+    `backend/app/models/schemas.py`, `backend/tests/test_scenario_engine.py`
+    (new), `frontend/lib/types.ts`, `frontend/lib/api.ts`,
+    `frontend/components/AssetDetailPanel.tsx`, `feature_list.json`.
+  - Next best step: both of the two new Agent Skills scoped in Session
+    032 are done. No unfinished feature is currently queued in
+    `feature_list.json` -- next session should either pick a new
+    direction with the user, or revisit the copilot-chat guardrail
+    question flagged above if they want tighter defense-in-depth.
 - **Session 032 (2026-07-25): fixed a UI overflow bug in the Farm overview
   weather widget (`frontend/components/DashboardPanel.tsx`).** User
   reported "the weather of farm overview has a UI bug" with no further

@@ -13,6 +13,7 @@ import type {
   Briefing,
   CopilotAnswer,
   HarvestPlan,
+  ScenarioResult,
   Task,
   HistoryEvent,
   Weather,
@@ -179,6 +180,20 @@ interface BackendHarvestPlan {
   eta_description: string
   basis: string
   narrative: string
+}
+
+interface BackendScenarioResult {
+  asset_id: string
+  risk_type: string
+  is_available: boolean
+  reason: string | null
+  metric: string | null
+  current_value: number | null
+  baseline_delta_per_hour: number | null
+  available_actions: string[]
+  action: string | null
+  projections: { horizon_hours: number; without_action: number; with_action: number }[]
+  narrative: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +451,28 @@ export async function getAsset(id: string): Promise<AssetDetail> {
 export async function getHarvestPlan(assetId: string): Promise<HarvestPlan> {
   const p = await apiFetch<BackendHarvestPlan>(`/assets/${assetId}/harvest-plan`)
   return { is_ready: p.is_ready, eta_description: p.eta_description, narrative: p.narrative }
+}
+
+// Call with action=null to seed the picker (real candidate actions +
+// a silent baseline, no agent call); call again with a chosen action to
+// get the narrated with/without comparison (backend/app/main.py's
+// simulate_scenario only calls the agent once body.action is set).
+export async function simulateScenario(assetId: string, action: string | null): Promise<ScenarioResult> {
+  const r = await apiFetch<BackendScenarioResult>(`/assets/${assetId}/simulate`, {
+    method: "POST",
+    body: JSON.stringify({ action }),
+  })
+  return {
+    is_available: r.is_available,
+    reason: r.reason ?? undefined,
+    metric: r.metric ?? undefined,
+    current_value: r.current_value ?? undefined,
+    baseline_delta_per_hour: r.baseline_delta_per_hour ?? undefined,
+    available_actions: r.available_actions,
+    action: r.action ?? undefined,
+    projections: r.projections,
+    narrative: r.narrative ?? undefined,
+  }
 }
 
 export async function getAssetRecommendations(assetId: string): Promise<Recommendation[]> {

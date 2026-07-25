@@ -118,3 +118,21 @@ export interface HarvestPlan {
   eta_description: string
   narrative: string
 }
+
+export interface ScenarioProjection {
+  horizon_hours: number
+  without_action: number
+  with_action: number
+}
+
+export interface ScenarioResult {
+  is_available: boolean
+  reason?: string
+  metric?: string
+  current_value?: number
+  baseline_delta_per_hour?: number
+  available_actions: string[]
+  action?: string
+  projections: ScenarioProjection[]
+  narrative?: string
+}

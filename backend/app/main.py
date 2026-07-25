@@ -20,6 +20,8 @@ from app.models.schemas import (
     DashboardSummary,
     HarvestPlan,
     Recommendation,
+    ScenarioRequest,
+    ScenarioResult,
     WeatherReading,
 )
 from app.services import (
@@ -28,6 +30,7 @@ from app.services import (
     harvest_planner,
     recommendation_parser,
     risk_engine,
+    scenario_engine,
     snowflake_client,
     weather_client,
 )
@@ -57,7 +60,10 @@ def _recent_readings(asset_id: str, limit: int) -> list[dict]:
         "SELECT * FROM ASSET_READINGS WHERE ASSET_ID = %s ORDER BY TS DESC LIMIT %s",
         (asset_id, limit),
     )
-    return [{field: row[field.upper()] for field in asset_simulator.ALL_READING_FIELDS} for row in rows]
+    return [
+        {"ts": row["TS"], **{field: row[field.upper()] for field in asset_simulator.ALL_READING_FIELDS}}
+        for row in rows
+    ]
 
 
 def _insert_reading(asset_id: str, ts: datetime, reading: dict) -> None:
@@ -542,6 +548,86 @@ async def get_harvest_plan(asset_id: str):
         is_ready=plan["is_ready"],
         eta_description=plan["eta_description"],
         basis=plan["basis"],
+        narrative=narrative,
+    )
+
+
+@app.post("/assets/{asset_id}/simulate", response_model=ScenarioResult)
+async def simulate_scenario(asset_id: str, body: ScenarioRequest = ScenarioRequest()):
+    """Deterministic what-if projection (see scenario_engine.py) narrated
+    by the Cortex Agent -- same "Python computes, agent explains" split as
+    get_harvest_plan (feat-055; see that feature's notes for why). Called
+    with no `action` to seed the frontend's picker with the current
+    risk_type's real candidate actions and a silent baseline (no agent
+    call, so the initial page load isn't gated on a live LLM round trip);
+    called again with a chosen `action` to get the narrated comparison."""
+    asset_rows = snowflake_client.run_query(
+        "SELECT ASSET_ID, NAME FROM FARM_ASSETS WHERE ASSET_ID = %s", (asset_id,)
+    )
+    if not asset_rows:
+        raise HTTPException(status_code=404, detail=f"No asset found with id {asset_id}")
+    name = asset_rows[0]["NAME"]
+
+    risk_rows = snowflake_client.run_query(
+        "SELECT RISK_TYPE FROM ASSET_RISK_ASSESSMENTS WHERE ASSET_ID = %s AND RISK_TYPE NOT LIKE '%%_forecast_24h' "
+        "ORDER BY TS DESC LIMIT 1",
+        (asset_id,),
+    )
+    risk_type = risk_rows[0]["RISK_TYPE"] if risk_rows else "none"
+
+    if risk_type == "none" or risk_engine.trend_metric(risk_type) is None:
+        return ScenarioResult(
+            asset_id=asset_id,
+            risk_type=risk_type,
+            is_available=False,
+            reason="This asset has no active risk with a trackable trend to simulate right now.",
+        )
+
+    available_actions = scenario_engine.available_actions(risk_type)
+    readings = _recent_readings(asset_id, 2)
+    current = readings[0] if readings else {}
+    previous = readings[1] if len(readings) > 1 else None
+
+    action = body.action or scenario_engine.NO_ACTION
+    sim = scenario_engine.simulate(risk_type, current, previous, action)
+
+    if "error" in sim:
+        return ScenarioResult(
+            asset_id=asset_id,
+            risk_type=risk_type,
+            is_available=False,
+            reason=sim["error"],
+            available_actions=available_actions,
+        )
+
+    narrative = None
+    if body.action:
+        action_label = action.replace("_", " ")
+        metric_label = sim["metric"].replace("_", " ")
+        outcomes = "; ".join(
+            f"in {p['horizon_hours']}h: without action ~{p['without_action']}, with {action_label} ~{p['with_action']}"
+            for p in sim["projections"]
+        )
+        prompt = (
+            f"For {name} ({asset_id}), a deterministic projection has already computed the following "
+            f"real what-if comparison for {metric_label} -- do not recalculate or second-guess the "
+            f"numbers. Currently {sim['current_value']}, trending {sim['baseline_delta_per_hour']}/hour "
+            f"without intervention. Projected outcomes: {outcomes}. In 3-5 plain sentences (no markdown "
+            "headings, no bullet lists, no 6-field recommendation format), explain what this comparison "
+            f"means and give one clear recommendation on whether to take the '{action_label}' action now."
+        )
+        narrative = _clean_agent_answer(await cortex_agent_client.ask_agent(prompt))
+
+    return ScenarioResult(
+        asset_id=asset_id,
+        risk_type=risk_type,
+        is_available=True,
+        metric=sim["metric"],
+        current_value=sim["current_value"],
+        baseline_delta_per_hour=sim["baseline_delta_per_hour"],
+        available_actions=available_actions,
+        action=action,
+        projections=sim["projections"],
         narrative=narrative,
     )
 

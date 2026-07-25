@@ -27,6 +27,14 @@ _TREND_METRIC = {
 }
 
 
+def trend_metric(risk_type: str) -> tuple[str, str] | None:
+    """Public accessor for _TREND_METRIC -- scenario_engine.py keys its
+    intervention effects off the same (field, direction) pair this module
+    already tracks per risk_type, so a what-if projection's target metric
+    always matches what predict_trend itself would project."""
+    return _TREND_METRIC.get(risk_type)
+
+
 def assess_risk(asset_type: str, reading: dict) -> tuple[str, str, str]:
     """Return (risk_type, risk_level, notes) -- the single most severe
     rule-based risk for this asset type given its latest reading, or

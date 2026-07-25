@@ -1,14 +1,25 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowLeft, ChevronDown, ChevronUp, Gauge, History, Sparkles, Sprout, TrendingUp } from "lucide-react"
-import type { AssetDetail, HarvestPlan, Recommendation, AssetType } from "@/lib/types"
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  FlaskConical,
+  Gauge,
+  History,
+  Sparkles,
+  Sprout,
+  TrendingUp,
+} from "lucide-react"
+import type { AssetDetail, HarvestPlan, Recommendation, AssetType, ScenarioResult } from "@/lib/types"
 import {
   approveRecommendation,
   getAsset,
   getAssetRecommendations,
   getHarvestPlan,
   rejectRecommendation,
+  simulateScenario,
 } from "@/lib/api"
 import { useApiData } from "@/lib/useApiData"
 import { invalidate } from "@/lib/dataCache"
@@ -78,6 +89,117 @@ function HarvestPlannerCard({ assetId }: { assetId: string }) {
             ))}
           </div>
         </>
+      )}
+    </Card>
+  )
+}
+
+function actionLabel(action: string): string {
+  return action === "no_action" ? "Do nothing" : action.replace(/_/g, " ")
+}
+
+// Unlike HarvestPlannerCard, this mounts for every asset type -- the
+// backend gracefully returns is_available: false for a healthy asset
+// (200, not a 400), so there's no wrong-type case to gate the mount on.
+function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
+  const { data: baseline, loading } = useApiData<ScenarioResult>(`scenario:${assetId}`, () =>
+    simulateScenario(assetId, null),
+  )
+  const [selectedAction, setSelectedAction] = useState("")
+  const [result, setResult] = useState<ScenarioResult | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function runSimulation() {
+    if (!selectedAction) return
+    setSubmitting(true)
+    try {
+      setResult(await simulateScenario(assetId, selectedAction))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading || !baseline) {
+    return (
+      <Card className="p-4">
+        <h3 className="flex items-center gap-2 text-sm font-bold">
+          <FlaskConical className="size-4 text-primary" aria-hidden="true" />
+          Scenario Simulator
+        </h3>
+        <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
+      </Card>
+    )
+  }
+
+  // No active, trackable risk on this asset right now -- nothing to
+  // simulate, so the card contributes nothing to the page.
+  if (!baseline.is_available) {
+    return null
+  }
+
+  return (
+    <Card className="p-4">
+      <h3 className="flex items-center gap-2 text-sm font-bold">
+        <FlaskConical className="size-4 text-primary" aria-hidden="true" />
+        Scenario Simulator
+      </h3>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {baseline.metric?.replace(/_/g, " ")} is currently {baseline.current_value}, trending{" "}
+        {baseline.baseline_delta_per_hour}/hr without intervention.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          value={selectedAction}
+          onChange={(e) => {
+            setSelectedAction(e.target.value)
+            setResult(null)
+          }}
+          className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm"
+        >
+          <option value="">What if I…</option>
+          {baseline.available_actions.map((action) => (
+            <option key={action} value={action}>
+              {actionLabel(action)}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={runSimulation}
+          disabled={!selectedAction || submitting}
+          className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+        >
+          {submitting ? "Simulating…" : "Simulate"}
+        </button>
+      </div>
+
+      {result && result.projections.length > 0 && (
+        <>
+          <p className="mt-3 text-[11px] font-medium text-muted-foreground">
+            Without action → with {actionLabel(result.action ?? "")}
+          </p>
+          <dl className="mt-1 grid grid-cols-2 gap-2">
+            {result.projections.map((p) => (
+              <div key={p.horizon_hours} className="rounded-lg bg-secondary/60 px-2.5 py-1.5">
+                <dt className="text-[10px] font-medium text-muted-foreground">In {p.horizon_hours}h</dt>
+                <dd className="text-sm font-bold tabular-nums">
+                  {p.without_action} → {p.with_action}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </>
+      )}
+
+      {result?.narrative && (
+        <div className="mt-3 space-y-1.5">
+          {splitIntoSentences(result.narrative).map((sentence, i) => (
+            <p key={i} className="text-sm leading-relaxed text-pretty text-muted-foreground">
+              {renderInlineMarkdown(sentence)}
+            </p>
+          ))}
+        </div>
       )}
     </Card>
   )
@@ -214,6 +336,8 @@ export function AssetDetailPanel({
       </Card>
 
       {HARVEST_PLANNER_TYPES.includes(asset.type) && <HarvestPlannerCard assetId={asset.id} />}
+
+      <ScenarioSimulatorCard assetId={asset.id} />
 
       {/* Recommendations with working approve/reject */}
       <section className="flex flex-col gap-3">
