@@ -1291,5 +1291,172 @@ Both tests pass cleanly.
   Check: Test 2: "Any compliance restrictions on CC-001?"
   Result: Agent confirms no treatments on record, no withdrawal period, clears eggs for immediate sale — zero false-positive compliance warnings
 
+## Part 8 — Harvest Planner: static readiness threshold + agent ETA guardrail (drafted 2026-07-25, run 2026-07-25)
+
+Drafted for `feat-054` in `feature_list.json`. Purely additive (1 new
+`CREATE TABLE`) -- no existing table is touched. This deliberately gives
+the agent only the STATIC readiness threshold, not a projected ETA -- the
+ETA itself is computed deterministically in `backend/app/services/
+harvest_planner.py`, not by the agent, per the 2026-07-25 decision that
+multi-step numeric extrapolation is a weaker spot for LLM reasoning than
+the single-value comparisons feat-044 relies on. Review wording before
+running.
+
+### 1. Schema (feat-054)
+
+```
+Create one new table in CLIMATE_AG_COPILOT.OPS: HARVEST_RULES
+(asset_type, ready_growth_stage, min_readiness_pct, description). Do not
+modify or drop any existing table.
+```
+
+Result:
+Table CLIMATE_AG_COPILOT.OPS.HARVEST_RULES has been created with columns: asset_type, ready_growth_stage, min_readiness_pct (numeric, 5,2), and description.
+
+### 2. Seed data (feat-054)
+
+```
+Populate HARVEST_RULES with one row per crop asset type that tracks
+growth_stage: rice_field (ready_growth_stage 'harvest_ready',
+min_readiness_pct NULL -- rice_field has no harvest_readiness_pct column
+in ASSET_READINGS, so readiness is judged by growth_stage alone),
+fruit_orchard (ready_growth_stage 'harvest_ready', min_readiness_pct 85),
+greenhouse (ready_growth_stage 'harvest_ready', min_readiness_pct 80).
+Each row's description should explain in one plain sentence what "ready"
+means for that asset type.
+```
+
+Result:
+Done. Three rows inserted into CLIMATE_AG_COPILOT.OPS.HARVEST_RULES:
+
+  ┌───────────────┬────────────────────┬───────────────────┬───────────────────────────────┐
+  │ asset_type    │ ready_growth_stage │ min_readiness_pct │ description                   │
+  ├───────────────┼────────────────────┼───────────────────┼───────────────────────────────┤
+  │ rice_field    │ harvest_ready      │ NULL              │ Judged by growth_stage alone  │
+  ├───────────────┼────────────────────┼───────────────────┼───────────────────────────────┤
+  │ fruit_orchard │ harvest_ready      │ 85                │ growth_stage + ≥85% readiness │
+  ├───────────────┼────────────────────┼───────────────────┼───────────────────────────────┤
+  │ greenhouse    │ harvest_ready      │ 80                │ growth_stage + ≥80% readiness │
+  └───────────────┴────────────────────┴───────────────────┴───────────────────────────────┘
+
+### 3. Semantic view update (feat-054)
+
+```
+Extend the existing FARM_OPS_VIEW semantic view in CLIMATE_AG_COPILOT.OPS
+to also include HARVEST_RULES as a new logical table, joined to assets
+via asset_type. Add ai_sql_generation guidance stating that HARVEST_RULES
+gives the STATIC readiness threshold for each crop asset type only (is
+the asset ready right now, given its latest growth_stage/
+harvest_readiness_pct) -- it does NOT give a projected ready-by date,
+since that requires a rate-of-change calculation over multiple readings
+that this semantic view does not expose. Re-verify the existing
+onboarding queries still work unchanged, then verify two new queries:
+"is Rice Field A ready to harvest" and "is Greenhouse A ready to harvest"
+each correctly compare current growth_stage/harvest_readiness_pct against
+the real HARVEST_RULES threshold for that asset_type.
+```
+
+Result:
+All verifications pass. Here's the summary:
+
+  Semantic view FARM_OPS_VIEW extended with HARVEST_RULES:
+
+  • New logical table HARVEST_RULES backed by CLIMATE_AG_COPILOT.OPS.HARVEST_RULES, with dimensions (ready_growth_stage, description) and one fact (min_readiness_pct).
+  • No formal relationship declared (ASSET_TYPE isn't a PK on ASSETS), but the ai_sql_generation instructions explain the join pattern JOIN HARVEST_RULES hr ON 
+  hr.asset_type = a.asset_type.
+  • AI guidance explicitly states HARVEST_RULES gives the static readiness threshold only — it does NOT support projected ready-by dates.
+  • Two new verified queries added:
+    • RICE_FIELD_HARVEST_READINESS → correctly returns READY TO HARVEST (growth_stage = harvest_ready, no min_readiness_pct check needed)
+    • GREENHOUSE_HARVEST_READINESS → correctly returns NOT READY (growth_stage is reproductive, not harvest_ready, and readiness is 63.34% < 80% threshold)
+
+  All 7 original onboarding queries continue to execute without errors.
+
+### 4. Cortex Agent update (feat-054)
+
+```
+Update FARM_OPS_AGENT's orchestration instructions in
+CLIMATE_AG_COPILOT.OPS so that when asked about harvest timing or
+readiness for a rice_field, fruit_orchard, or greenhouse asset, the agent
+states the asset's real current growth_stage/harvest_readiness_pct and
+the real HARVEST_RULES threshold for that asset_type, and says clearly
+whether it is ready now or not yet ready -- but the agent must NOT
+attempt to calculate or state a projected ready-by date or ETA (e.g. "it
+will be ready in about 5 days"), since it has no access to the readiness
+trend rate needed for that calculation. If asked for a projected date/ETA
+specifically, the agent should say a projected estimate is available in
+the app's dedicated Harvest Planner view rather than guessing one itself.
+This applies alongside the existing 6-field recommendation format and
+every other existing instruction (stock availability, withdrawal-period
+compliance) -- unchanged for assets/questions those already cover. Test
+with 3 real questions: one asset below its readiness threshold (should
+state current status, no ETA guess), one asset at or above its readiness
+threshold (should state it is ready now), and one direct "when will X be
+ready to harvest" ETA question (should defer to the Harvest Planner view,
+not guess a date).
+```
+
+Result:
+All 3 tests pass. Here's the summary:
+
+  Agent updated and verified with 3 tests:
+
+  Row 1
+  Test: 1
+  Question: "Is Greenhouse A ready to harvest?"
+  Expected Behavior: Report NOT READY, cite current values vs. threshold, no ETA
+  Result: Correctly states growth stage reproductive vs. needed harvest_ready, 63.3% vs. 80% threshold, no date guessed
+  ────────────────────────────────────────────────────────────
+  Row 2
+  Test: 2
+  Question: "Is the rice field ready to harvest?"
+  Expected Behavior: Report READY NOW
+  Result: Correctly identifies harvest_ready stage matches threshold, no numeric check needed for rice
+  ────────────────────────────────────────────────────────────
+  Row 3
+  Test: 3
+  Question: "When will Greenhouse A be ready to harvest?"
+  Expected Behavior: Defer to Harvest Planner, don't guess a date
+  Result: Explicitly says it cannot project a date and directs the user to the Harvest Planner view
+
+  Changes made to FARM_OPS_AGENT orchestration instructions:
+
+  • Added HARVEST READINESS PROTOCOL — MANDATORY section requiring the agent to query current readings + HARVEST_RULES thresholds and state whether an asset is ready now
+  or not
+  • Added CRITICAL CONSTRAINT — NO PROJECTED DATES OR ETAs forbidding date guesses and directing users to the Harvest Planner view
+  • Updated the query_farm_ops tool description to mention harvest readiness rules
+  • Added two new sample questions: "Is the rice field ready to harvest?" and "Is Greenhouse A ready to harvest?"
+
+### 5. Verification (feat-054)
+
+```
+Verify in Snowsight (or via CoCo):
+
+SELECT * FROM CLIMATE_AG_COPILOT.OPS.HARVEST_RULES ORDER BY asset_type;
+
+Ask the agent "is Rice Field A ready to harvest" and confirm the response
+cites the real current growth_stage and the real HARVEST_RULES threshold
+for rice_field, with no fabricated ETA date. Ask the agent "when will
+Fruit Orchard A be ready to harvest" and confirm it defers to the app's
+Harvest Planner view rather than guessing a specific date.
+```
+
+Result:
+All verifications pass:
+
+  1. HARVEST_RULES table — 3 rows confirmed, ordered by asset_type, with correct thresholds (fruit_orchard: 85%, greenhouse: 80%, rice_field: NULL).
+
+  2. "Is Rice Field A ready to harvest?" — The agent:
+
+  • Cites the real current growth_stage: harvest_ready
+  • Cites the real HARVEST_RULES threshold: harvest_ready with no min readiness percentage
+  • Correctly concludes: READY TO HARVEST
+  • No fabricated ETA date
+
+  3. "When will Fruit Orchard A be ready to harvest?" — The agent:
+
+  • Reports the orchard is actually already at harvest_ready with 99.7% readiness (above the 85% threshold), so it's ready now
+  • Explicitly defers projected-date questions to the Harvest Planner view: "I don't estimate those dates here to avoid giving you a fabricated number"
+  • No guessed date or ETA anywhere in the response
+
   The withdrawal protocol is working end-to-end: real data-grounded compliance warnings on assets with active withdrawal periods, complete silence on assets with no
   regulated treatments.

@@ -1,11 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowLeft, ChevronDown, ChevronUp, Gauge, History, Sparkles, TrendingUp } from "lucide-react"
-import type { AssetDetail, Recommendation, AssetType } from "@/lib/types"
-import { approveRecommendation, getAsset, getAssetRecommendations, rejectRecommendation } from "@/lib/api"
+import { ArrowLeft, ChevronDown, ChevronUp, Gauge, History, Sparkles, Sprout, TrendingUp } from "lucide-react"
+import type { AssetDetail, HarvestPlan, Recommendation, AssetType } from "@/lib/types"
+import {
+  approveRecommendation,
+  getAsset,
+  getAssetRecommendations,
+  getHarvestPlan,
+  rejectRecommendation,
+} from "@/lib/api"
 import { useApiData } from "@/lib/useApiData"
 import { invalidate } from "@/lib/dataCache"
+import { renderInlineMarkdown, splitIntoSentences } from "@/lib/markdown"
 import { Card, CardHeader } from "./Card"
 import { RiskBadge } from "./RiskBadge"
 import { RecommendationCard } from "./RecommendationCard"
@@ -38,6 +45,42 @@ const TONE_CLASS: Record<string, string> = {
   good: "text-healthy",
   warn: "text-warning-foreground",
   bad: "text-critical",
+}
+
+// Mirrors backend/app/main.py's _HARVEST_PLANNER_ASSET_TYPES -- only these
+// 3 types have a HARVEST_RULES row, so this card only renders for them
+// (calling getHarvestPlan for any other type 400s).
+const HARVEST_PLANNER_TYPES: AssetType[] = ["rice_field", "fruit_orchard", "greenhouse"]
+
+function HarvestPlannerCard({ assetId }: { assetId: string }) {
+  const { data: plan, loading } = useApiData<HarvestPlan>(`harvest-plan:${assetId}`, () =>
+    getHarvestPlan(assetId),
+  )
+
+  return (
+    <Card className="p-4">
+      <h3 className="flex items-center gap-2 text-sm font-bold">
+        <Sprout className="size-4 text-primary" aria-hidden="true" />
+        Harvest Planner
+      </h3>
+      {loading || !plan ? (
+        <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
+      ) : (
+        <>
+          <p className={`mt-2 text-sm font-semibold text-pretty ${plan.is_ready ? "text-healthy" : ""}`}>
+            {plan.eta_description}
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {splitIntoSentences(plan.narrative).map((sentence, i) => (
+              <p key={i} className="text-sm leading-relaxed text-pretty text-muted-foreground">
+                {renderInlineMarkdown(sentence)}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
+  )
 }
 
 export function AssetDetailPanel({
@@ -169,6 +212,8 @@ export function AssetDetailPanel({
         </h3>
         <p className="mt-2 text-sm leading-relaxed text-pretty">{asset.prediction}</p>
       </Card>
+
+      {HARVEST_PLANNER_TYPES.includes(asset.type) && <HarvestPlannerCard assetId={asset.id} />}
 
       {/* Recommendations with working approve/reject */}
       <section className="flex flex-col gap-3">

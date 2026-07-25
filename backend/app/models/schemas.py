@@ -156,3 +156,12 @@ class CopilotQuestion(BaseModel):
 class CopilotAnswer(BaseModel):
     question: str
     answer: str
+
+
+class HarvestPlan(BaseModel):
+    asset_id: str
+    asset_type: AssetType
+    is_ready: bool
+    eta_description: str
+    basis: str
+    narrative: str

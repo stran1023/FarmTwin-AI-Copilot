@@ -12,6 +12,7 @@ import type {
   StockAvailability,
   Briefing,
   CopilotAnswer,
+  HarvestPlan,
   Task,
   HistoryEvent,
   Weather,
@@ -169,6 +170,15 @@ interface BackendBriefingToday {
 interface BackendCopilotAnswer {
   question: string
   answer: string
+}
+
+interface BackendHarvestPlan {
+  asset_id: string
+  asset_type: AssetType
+  is_ready: boolean
+  eta_description: string
+  basis: string
+  narrative: string
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +428,14 @@ export async function getAsset(id: string): Promise<AssetDetail> {
     tasks,
     history: mapHistory(detail.history),
   }
+}
+
+// Only rice_field/fruit_orchard/greenhouse have a HARVEST_RULES row
+// (backend/app/main.py's _HARVEST_PLANNER_ASSET_TYPES) -- callers should
+// only invoke this for those types, since the backend 400s otherwise.
+export async function getHarvestPlan(assetId: string): Promise<HarvestPlan> {
+  const p = await apiFetch<BackendHarvestPlan>(`/assets/${assetId}/harvest-plan`)
+  return { is_ready: p.is_ready, eta_description: p.eta_description, narrative: p.narrative }
 }
 
 export async function getAssetRecommendations(assetId: string): Promise<Recommendation[]> {

@@ -2,7 +2,201 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-07-24
+- Last Updated: 2026-07-25
+- **Session 032 (2026-07-25): fixed a UI overflow bug in the Farm overview
+  weather widget (`frontend/components/DashboardPanel.tsx`).** User
+  reported "the weather of farm overview has a UI bug" with no further
+  detail, so reproduced it live rather than guessing: started the real
+  backend (`uvicorn`, already-configured `backend/venv`) and used the
+  already-running frontend dev server (`localhost:3000`), then drove it
+  headlessly with a one-off Playwright script (project's existing
+  `@playwright/test` devDependency) to screenshot the rendered page.
+  - Root cause: `weather.humidity_pct` and `weather.rainfall_mm` come
+    from Snowflake as raw unrounded floats (e.g. `89.041666...`,
+    `14.66667`) and were interpolated directly into the small
+    `WeatherStat` boxes with no rounding — unlike `temp_c`, which already
+    had `Math.round()`. The long string overflowed its fixed-width box in
+    the `grid-cols-3` stat row and visually collided with the adjacent
+    "Rain" stat (screenshot showed literal overlapping text
+    `89.041666614mm7%`).
+  - Fix: round `humidity_pct`, `rainfall_mm`, and `wind_kph` to whole
+    numbers on display (`Math.round`, matching `temp_c`'s existing
+    treatment) — tried `.toFixed(1)` first but the unit suffix (`mm`/`kph`)
+    still got clipped by `truncate` in the narrow box, so whole numbers
+    were needed to fit. Also added `truncate` to `WeatherStat`'s `<dd>` as
+    a defensive guard so any future long value degrades to an ellipsis
+    instead of overflowing into the neighboring cell again.
+  - Verification: re-screenshotted after the fix — humidity/rain/wind now
+    render as `89%` / `14 mm` / `18 kph` with no overlap or clipping.
+    `npx tsc --noEmit` clean, `cd backend && python -m compileall app`
+    clean (backend untouched, re-ran per CLAUDE.md's verification list
+    anyway). No feature_list.json entry matched this (not a listed
+    feature, a reported bug), so no status flip there.
+  - Files changed: `frontend/components/DashboardPanel.tsx`.
+  - **Same session, continued: scoped and implemented feat-054 (Harvest
+    Planner), scoped feat-055 (Scenario Simulator) for next session.**
+    User asked which hackathon rubric category the project fit
+    ("Domain-Specific AI Copilot" — confirmed via `docs/challenge.md`,
+    which is literally titled that), then asked for an honest assessment
+    of hackathon competitiveness, then proposed adding all 7 "Agent
+    Skills" named in `docs/FarmTwin-AI-Copilot.md`'s vision doc. Pushed
+    back on building all 7 as literal separate Cortex Agent tools: 4 of
+    them (Livestock Advisor, Crop Advisor, Task Planner, Risk Assessment)
+    just re-slice the existing unified `query_farm_ops`/`FARM_OPS_VIEW`
+    tool, which already spans every asset type by design (per
+    `docs/architecture.md`'s 2026-07-14 pivot) — building them as
+    separate tools would fragment that unification and add Cortex Agent
+    tool-selection risk for no new capability. A 5th (Weather Impact
+    Analyzer) was also ruled out: weather-to-risk correlation already
+    appears unprompted in real recommendation output (see Session 031's
+    GH-001 fungicide recommendation citing humidity/temp directly), so
+    there's no gap to fill. Recommended the 2 genuinely new capabilities
+    instead: Harvest Planner and Scenario Simulator. User agreed to build
+    both.
+  - Used the `feature-planner` skill to scope both into `feature_list.json`
+    (`feat-054`, `feat-055`, `not_started`/`blocked` per the harness's
+    real status vocabulary — checked `.claude/skills/harness-creator/`
+    since all 24 existing entries happen to be `passing` and don't show
+    the non-passing convention).
+  - Key design finding before scoping: `risk_engine.predict_trend()`
+    already computes a one-tick "if this trend continues, no action
+    taken" linear projection every `/workflow/run` tick (the
+    `*_forecast_24h` risk rows) — so Scenario Simulator's real gap is
+    only the "with a specific intervention" branch, not projection
+    itself.
+  - Put one genuine design fork to the user via `AskUserQuestion` before
+    writing any CoCo prompt (since CoCo prompts run against the live,
+    shared Snowflake account and are costly to redo): should Scenario
+    Simulator's projection math be deterministic Python (agent only
+    narrates) or agent-native reasoning over Snowflake-exposed data
+    (matching feat-044's date-math-via-agent-reasoning precedent)? User
+    chose deterministic Python, citing the same reasoning this agent
+    raised — multi-step numeric extrapolation is a weaker LLM-reliability
+    spot than feat-044's single-addition date math. This same reasoning
+    was then extended to Harvest Planner's ETA (also a rate-based
+    projection, not a single addition), for consistency.
+  - **feat-054 (Harvest Planner) implemented this session, feat-055 not
+    yet started (next session):**
+    - Drafted CoCo prompt Part 8 in `snowflake/coco-prompts.md` (new
+      `HARVEST_RULES` table + `FARM_OPS_VIEW` extension + an explicit
+      Cortex Agent guardrail instruction telling it to state current
+      readiness/threshold but NOT calculate its own ETA if asked via
+      copilot chat) — drafted only, **not yet run** by the user.
+    - Backend: new `backend/app/services/projection.py` (shared linear-
+      projection helper, meant to be reused by `feat-055` too) and
+      `backend/app/services/harvest_planner.py` (`plan_harvest()`: linear
+      readiness-trend ETA for `fruit_orchard`/`greenhouse`, since
+      `asset_simulator.py` only gives those two a continuous
+      `harvest_readiness_pct`; expected-value growth-stage-transition ETA
+      for `rice_field`, which has no `harvest_readiness_pct` column at
+      all). `schemas.py` gained `HarvestPlan`; `main.py` gained
+      `_recent_readings()` (refactored `_latest_reading` to reuse it) and
+      `GET /assets/{asset_id}/harvest-plan`, which hands the deterministic
+      numbers to a real `cortex_agent_client.ask_agent()` call to narrate
+      (with an explicit "do not recalculate" instruction in the prompt).
+      `cd backend && python -m compileall app`: clean. New
+      `tests/test_harvest_planner.py` (11 cases, both projection shapes);
+      full suite 100/100 pass (89 pre-existing + 11 new).
+    - Frontend: `lib/types.ts`/`lib/api.ts` gained `HarvestPlan`/
+      `getHarvestPlan()`; `AssetDetailPanel.tsx` gained a
+      `HarvestPlannerCard` subcomponent, deliberately only *mounted* (not
+      just conditionally hidden) for `rice_field`/`fruit_orchard`/
+      `greenhouse` via `HARVEST_PLANNER_TYPES.includes(asset.type)` —
+      calling the hook unconditionally would have cached a permanent
+      `null` result before the asset type was even known, since
+      `dataCache.ensure()` only fires a fetcher once per key while data
+      is fresh. `npx tsc --noEmit` and `npm run lint`: both clean.
+    - Live smoke test (real backend + live Snowflake account): `GET
+      /assets/RF-001/harvest-plan` correctly 500s with `Object
+      HARVEST_RULES does not exist or not authorized` — confirms the
+      endpoint reaches the real query (asset lookup, type-check, 2-reading
+      fetch all ran fine first) and fails exactly where expected, not from
+      a code bug. Live Playwright: Paddy Block East (RF-001, real
+      `growth_stage='harvest_ready'` today)'s asset detail page renders
+      correctly, the Harvest Planner card shows its loading skeleton (this
+      repo's `useApiData` convention has no component render an explicit
+      error state, so a backend failure shows as a permanent skeleton,
+      same as every other card here), zero crashes, zero regressions to
+      the rest of the page.
+    - `feat-054` moved to `blocked` (not `passing`) — all code is done and
+      code-level-verified; the only remaining step is the user running
+      `snowflake/coco-prompts.md` Part 8, then a live re-verification pass.
+  - Files changed: `feature_list.json` (feat-054/feat-055 added),
+    `snowflake/coco-prompts.md` (Part 8 drafted), `backend/app/services/
+    projection.py` (new), `backend/app/services/harvest_planner.py` (new),
+    `backend/app/models/schemas.py`, `backend/app/main.py`,
+    `backend/tests/test_harvest_planner.py` (new), `frontend/lib/types.ts`,
+    `frontend/lib/api.ts`, `frontend/components/AssetDetailPanel.tsx`.
+  - **Same session, continued again: user ran `snowflake/coco-prompts.md`
+    Part 8; live-verified feat-054 end to end and moved it to `passing`,
+    finding and fixing 2 real bugs along the way.** CoCo's own
+    verification (Snowsight/CoCo's interface) passed all tests: `HARVEST_RULES`
+    seeded (3 rows -- rice_field/NULL, fruit_orchard/85%, greenhouse/80%),
+    `FARM_OPS_VIEW` extended, agent guardrail instructions added. Per this
+    repo's own hard-learned precedent (feat-053 passed CoCo's internal
+    checks but broke this app's real `cortex_agent_client.py` calls for 5
+    days on a gap CoCo's testing never exercised), re-verified everything
+    through the actual app's REST endpoints, not just CoCo's report:
+    - `GET /assets/RF-001/harvest-plan` (rice_field, `harvest_ready`) and
+      `/assets/FO-001/harvest-plan` (fruit_orchard, 99.73% readiness) both
+      correctly returned `is_ready: true` with clean, grounded narration.
+      `/assets/FP-001/harvest-plan` (fish_pond) correctly 400s.
+    - **Bug 1 (found live):** `GET /assets/GH-001/harvest-plan` — the one
+      case that should hit the not-ready/projected-ETA branch — 500'd:
+      `TypeError: unsupported operand type(s) for -: decimal.Decimal and
+      float`. Root cause: `HARVEST_RULES.min_readiness_pct` is
+      `NUMERIC(5,2)` in Snowflake, decoded by
+      `snowflake-connector-python` as `decimal.Decimal`, incompatible with
+      the plain `float` `ASSET_READINGS.harvest_readiness_pct` yields --
+      a type mismatch neither CoCo's testing nor the earlier pre-CoCo
+      smoke test could have caught (both never reached this arithmetic).
+      Fixed by coercing to `float` at the Snowflake boundary in
+      `main.py`'s `get_harvest_plan()`. Full pytest suite re-run: 100/100
+      (unaffected, since `harvest_planner.py`'s own logic never changed).
+    - Re-tested GH-001 after the fix: `eta_description` "approximately
+      14.2 day(s) until the 80.0% threshold." Hand-verified against the
+      real two most recent `ASSET_READINGS` rows queried directly
+      (63.34% on 07-24, 62.17% on 07-23): `(80.0-63.34)/(63.34-62.17) =
+      16.66/1.17 = 14.2` -- exact match.
+    - **Bug 2 (found live, UX polish not a crash):** GH-001's narrative
+      came back in the agent's full 6-field markdown/heading/bullet-list
+      recommendation format (the prompt never constrained it), which
+      `frontend/lib/markdown.tsx`'s `renderInlineMarkdown` (bold-only, no
+      headings/lists, by its own documented scope) rendered as literal
+      `###`/`**` characters -- a readability regression not present in
+      RF-001/FO-001's shorter real responses. Fixed by constraining the
+      harvest-plan prompt in `main.py` to "3-5 plain sentences, no
+      markdown headings, no bullet lists, no 6-field format" (matching
+      `/briefing/today`'s existing prompt style), and switched
+      `AssetDetailPanel.tsx`'s `HarvestPlannerCard` to render with
+      `splitIntoSentences` + `renderInlineMarkdown` -- the same helper
+      `BriefingOverview.tsx` already uses for agent prose -- instead of a
+      single raw `<p>`. Re-verified live: clean sentence-per-paragraph
+      prose, real `<strong>` bold, no literal markdown characters.
+    - Live `/copilot/ask` guardrail check through the real REST path (not
+      just CoCo's own testing): "When will Greenhouse A be ready to
+      harvest?" correctly cited the real 63.3%/80% gap, said NOT READY,
+      and explicitly declined to project a date, pointing to the app's
+      Harvest Planner view instead -- zero fabricated ETA.
+    - `cd backend && python -m compileall app`, full pytest (100/100),
+      `npx tsc --noEmit`, `npm run lint`, `npm run build`: all clean.
+      Live Playwright screenshots across all 3 crop asset types: zero
+      console errors.
+    - Disclosed, not hidden: one live GH-001 capture (before the prompt
+      fix) showed a single oddly-split sentence fragment ("7% [Live
+      Data].") from non-deterministic LLM phrasing interacting with the
+      sentence-splitter -- not reproduced in the 3 other captures, same
+      known risk class this repo already documents elsewhere (feat-052's
+      notes: "an LLM's adherence to a formatting instruction is a strong
+      bias, not a hard guarantee").
+    - `feat-054` moved to `passing` in `feature_list.json` (10 evidence
+      entries). Files changed this round: `backend/app/main.py`,
+      `frontend/components/AssetDetailPanel.tsx`,
+      `snowflake/coco-prompts.md` (heading updated to reflect the run).
+  - Next best step: feat-055 (Scenario Simulator) is `not_started` and
+    reuses `backend/app/services/projection.py`. No CoCo prompt needed
+    for it (intervention effect rates are Python constants per the
+    2026-07-25 design decision) -- purely a backend + frontend session.
 - **Session 031 (2026-07-24): live-verified feat-043 and feat-044 end to
   end against the real Snowflake account; found and fixed a live
   `</answer>`-tag leak bug along the way.** User connected the CoCo/`cortex`

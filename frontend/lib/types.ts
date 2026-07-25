@@ -112,3 +112,9 @@ export interface Briefing {
 export interface CopilotAnswer {
   answer: string
 }
+
+export interface HarvestPlan {
+  is_ready: boolean
+  eta_description: string
+  narrative: string
+}

@@ -51,9 +51,9 @@ export function DashboardPanel({
             <Thermometer className="size-6 text-accent" aria-hidden="true" />
           </div>
           <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <WeatherStat icon={<Droplets className="size-3.5" />} label="Humidity" value={`${weather.humidity_pct}%`} />
-            <WeatherStat icon={<CloudRain className="size-3.5" />} label="Rain" value={`${weather.rainfall_mm} mm`} />
-            <WeatherStat icon={<Wind className="size-3.5" />} label="Wind" value={`${weather.wind_kph} kph`} />
+            <WeatherStat icon={<Droplets className="size-3.5" />} label="Humidity" value={`${Math.round(weather.humidity_pct)}%`} />
+            <WeatherStat icon={<CloudRain className="size-3.5" />} label="Rain" value={`${Math.round(weather.rainfall_mm)} mm`} />
+            <WeatherStat icon={<Wind className="size-3.5" />} label="Wind" value={`${Math.round(weather.wind_kph)} kph`} />
           </dl>
         </Card>
       </div>
@@ -134,7 +134,7 @@ function WeatherStat({
         {icon}
         {label}
       </dt>
-      <dd className="mt-0.5 text-sm font-bold tabular-nums">{value}</dd>
+      <dd className="mt-0.5 truncate text-sm font-bold tabular-nums">{value}</dd>
     </div>
   )
 }

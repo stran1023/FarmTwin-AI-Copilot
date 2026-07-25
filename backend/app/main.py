@@ -18,12 +18,14 @@ from app.models.schemas import (
     CopilotQuestion,
     DailyBriefing,
     DashboardSummary,
+    HarvestPlan,
     Recommendation,
     WeatherReading,
 )
 from app.services import (
     asset_simulator,
     cortex_agent_client,
+    harvest_planner,
     recommendation_parser,
     risk_engine,
     snowflake_client,
@@ -46,14 +48,16 @@ def health():
 
 
 def _latest_reading(asset_id: str) -> dict | None:
+    readings = _recent_readings(asset_id, 1)
+    return readings[0] if readings else None
+
+
+def _recent_readings(asset_id: str, limit: int) -> list[dict]:
     rows = snowflake_client.run_query(
-        "SELECT * FROM ASSET_READINGS WHERE ASSET_ID = %s ORDER BY TS DESC LIMIT 1",
-        (asset_id,),
+        "SELECT * FROM ASSET_READINGS WHERE ASSET_ID = %s ORDER BY TS DESC LIMIT %s",
+        (asset_id, limit),
     )
-    if not rows:
-        return None
-    row = rows[0]
-    return {field: row[field.upper()] for field in asset_simulator.ALL_READING_FIELDS}
+    return [{field: row[field.upper()] for field in asset_simulator.ALL_READING_FIELDS} for row in rows]
 
 
 def _insert_reading(asset_id: str, ts: datetime, reading: dict) -> None:
@@ -480,6 +484,65 @@ def get_asset_detail(asset_id: str):
         latest_risk=latest_risk,
         prediction=prediction,
         history=history,
+    )
+
+
+_HARVEST_PLANNER_ASSET_TYPES = {"rice_field", "fruit_orchard", "greenhouse"}
+
+
+@app.get("/assets/{asset_id}/harvest-plan", response_model=HarvestPlan)
+async def get_harvest_plan(asset_id: str):
+    """Deterministic readiness ETA (see harvest_planner.py) narrated by the
+    Cortex Agent -- the agent explains the already-computed numbers, it
+    does not calculate them (feat-054; see that feature's notes for why)."""
+    asset_rows = snowflake_client.run_query(
+        "SELECT ASSET_ID, ASSET_TYPE, NAME FROM FARM_ASSETS WHERE ASSET_ID = %s", (asset_id,)
+    )
+    if not asset_rows:
+        raise HTTPException(status_code=404, detail=f"No asset found with id {asset_id}")
+    asset_type, name = asset_rows[0]["ASSET_TYPE"], asset_rows[0]["NAME"]
+    if asset_type not in _HARVEST_PLANNER_ASSET_TYPES:
+        raise HTTPException(status_code=400, detail=f"Harvest Planner does not apply to asset type {asset_type}")
+
+    readings = _recent_readings(asset_id, 2)
+    if not readings:
+        raise HTTPException(status_code=404, detail=f"No sensor readings yet for {asset_id}")
+    current, previous = readings[0], (readings[1] if len(readings) > 1 else None)
+
+    rule_rows = snowflake_client.run_query("SELECT * FROM HARVEST_RULES WHERE ASSET_TYPE = %s", (asset_type,))
+    if not rule_rows:
+        raise HTTPException(status_code=404, detail=f"No harvest rule configured for asset type {asset_type}")
+    min_readiness_pct = rule_rows[0]["MIN_READINESS_PCT"]
+    rule = {
+        "ready_growth_stage": rule_rows[0]["READY_GROWTH_STAGE"],
+        # HARVEST_RULES.min_readiness_pct is NUMERIC(5,2) in Snowflake --
+        # snowflake-connector-python decodes NUMERIC columns as
+        # decimal.Decimal, which can't mix with the plain floats
+        # ASSET_READINGS' harvest_readiness_pct (a FLOAT column) yields, so
+        # this must be coerced at the boundary before it reaches
+        # harvest_planner's arithmetic.
+        "min_readiness_pct": float(min_readiness_pct) if min_readiness_pct is not None else None,
+    }
+
+    plan = harvest_planner.plan_harvest(asset_type, current, previous, rule)
+
+    prompt = (
+        f"For {name} ({asset_id}, a {asset_type.replace('_', ' ')}), a deterministic projection has "
+        "already computed the following real harvest-readiness estimate -- do not recalculate or "
+        "second-guess the numbers. In 3-5 plain sentences (no markdown headings, no bullet lists, no "
+        "6-field recommendation format -- just short narrative prose, matching how you'd summarize a "
+        "daily briefing), explain what this means and give one concrete recommendation grounded in it: "
+        f"{plan['eta_description']}"
+    )
+    narrative = _clean_agent_answer(await cortex_agent_client.ask_agent(prompt))
+
+    return HarvestPlan(
+        asset_id=asset_id,
+        asset_type=asset_type,
+        is_ready=plan["is_ready"],
+        eta_description=plan["eta_description"],
+        basis=plan["basis"],
+        narrative=narrative,
     )
 
 
