@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { Sparkles, Send, User, Bot } from "lucide-react"
 import { askCopilot } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { renderInlineMarkdown, splitIntoSentences } from "@/lib/markdown"
 
 interface ChatMessage {
   id: string
@@ -99,11 +100,15 @@ export function CopilotPanel() {
               className={cn(
                 "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
                 msg.role === "assistant"
-                  ? "rounded-tl-sm bg-secondary text-secondary-foreground"
+                  ? "rounded-tl-sm bg-secondary text-secondary-foreground space-y-1.5"
                   : "rounded-tr-sm bg-primary text-primary-foreground",
               )}
             >
-              {msg.text}
+              {msg.role === "assistant"
+                ? splitIntoSentences(msg.text).map((sentence, i) => (
+                    <p key={i}>{renderInlineMarkdown(sentence)}</p>
+                  ))
+                : msg.text}
             </div>
           </div>
         ))}

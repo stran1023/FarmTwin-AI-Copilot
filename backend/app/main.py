@@ -854,7 +854,9 @@ async def ask_copilot(body: CopilotQuestion):
         "Ground your answer in this farm's actual current data (assets, sensor readings, "
         "risk assessments, recommendations, and history) via the semantic view -- never give "
         "generic agricultural advice that isn't tied to this farm's real state. End your answer "
-        "with a concrete, actionable next step."
+        "with a concrete, actionable next step. Write in plain prose sentences (bold for emphasis "
+        "is fine) -- no markdown headings, no bullet lists, no 6-field recommendation format -- "
+        "this answer renders in a chat bubble, not a structured card."
     )
     raw = await cortex_agent_client.ask_agent(prompt)
     return CopilotAnswer(question=body.question, answer=_clean_agent_answer(raw))
