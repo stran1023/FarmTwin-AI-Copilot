@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Gauge,
   History,
+  Lock,
   Sparkles,
   Sprout,
   TrendingUp,
@@ -22,6 +23,7 @@ import type {
   YieldEstimate,
 } from "@/lib/types"
 import {
+  ApiError,
   approveRecommendation,
   getAsset,
   getAssetRecommendations,
@@ -29,18 +31,66 @@ import {
   getYieldEstimate,
   rejectRecommendation,
   simulateScenario,
+  unlockDemo,
 } from "@/lib/api"
+import { clearDemoToken, setDemoToken } from "@/lib/demoAuth"
 import { useApiData } from "@/lib/useApiData"
+import { useGatedAction } from "@/lib/useGatedAction"
 import { invalidate } from "@/lib/dataCache"
 import { renderInlineMarkdown, splitIntoSentences } from "@/lib/markdown"
 import { Card, CardHeader } from "./Card"
 import { RiskBadge } from "./RiskBadge"
 import { RecommendationCard } from "./RecommendationCard"
+import { PasscodePrompt } from "./PasscodePrompt"
 import { FishPondMarker } from "./FishPondMarker"
 import { ChickenCoopMarker } from "./ChickenCoopMarker"
 import { RiceFieldMarker } from "./RiceFieldMarker"
 import { FruitOrchardMarker } from "./FruitOrchardMarker"
 import { GreenhouseMarker } from "./GreenhouseMarker"
+
+// Every gated card (Harvest Planner, Scenario Simulator, Yield Estimate)
+// shares this "locked until clicked" body: a reveal button before the first
+// click, the shared passcode prompt if the backend 401s, a skeleton while
+// in flight, or nothing once `revealed` content takes over.
+function GatedReveal({
+  label,
+  needsPasscode,
+  passcodeError,
+  loading,
+  onReveal,
+  onSubmitPasscode,
+  onCancelPasscode,
+}: {
+  label: string
+  needsPasscode: boolean
+  passcodeError: boolean
+  loading: boolean
+  onReveal: () => void
+  onSubmitPasscode: (passcode: string) => void
+  onCancelPasscode: () => void
+}) {
+  if (needsPasscode) {
+    return (
+      <div className="mt-2">
+        <PasscodePrompt onSubmit={onSubmitPasscode} onCancel={onCancelPasscode} busy={loading} />
+        {passcodeError && <p className="mt-1 text-xs text-destructive">Incorrect passcode.</p>}
+      </div>
+    )
+  }
+  if (loading) {
+    return <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
+  }
+  return (
+    <button
+      type="button"
+      onClick={onReveal}
+      className="mt-2 flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+    >
+      <Lock className="size-3.5" aria-hidden="true" />
+      {label}
+    </button>
+  )
+}
 
 const TYPE_LABEL: Record<AssetType, string> = {
   fish_pond: "Fish Pond",
@@ -73,9 +123,8 @@ const TONE_CLASS: Record<string, string> = {
 const HARVEST_PLANNER_TYPES: AssetType[] = ["rice_field", "fruit_orchard", "greenhouse"]
 
 function HarvestPlannerCard({ assetId }: { assetId: string }) {
-  const { data: plan, loading } = useApiData<HarvestPlan>(`harvest-plan:${assetId}`, () =>
-    getHarvestPlan(assetId),
-  )
+  const { data: plan, loading, needsPasscode, passcodeError, reveal, submitPasscode, cancelPasscode } =
+    useGatedAction<HarvestPlan>(() => getHarvestPlan(assetId))
 
   return (
     <Card className="p-4">
@@ -83,9 +132,7 @@ function HarvestPlannerCard({ assetId }: { assetId: string }) {
         <Sprout className="size-4 text-primary" aria-hidden="true" />
         Harvest Planner
       </h3>
-      {loading || !plan ? (
-        <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
-      ) : (
+      {plan ? (
         <>
           <p className={`mt-2 text-sm font-semibold text-pretty ${plan.is_ready ? "text-healthy" : ""}`}>
             {plan.eta_description}
@@ -98,6 +145,16 @@ function HarvestPlannerCard({ assetId }: { assetId: string }) {
             ))}
           </div>
         </>
+      ) : (
+        <GatedReveal
+          label="View Harvest Plan"
+          needsPasscode={needsPasscode}
+          passcodeError={passcodeError}
+          loading={loading}
+          onReveal={reveal}
+          onSubmitPasscode={submitPasscode}
+          onCancelPasscode={cancelPasscode}
+        />
       )}
     </Card>
   )
@@ -110,6 +167,14 @@ function actionLabel(action: string): string {
 // Unlike HarvestPlannerCard, this mounts for every asset type -- the
 // backend gracefully returns is_available: false for a healthy asset
 // (200, not a 400), so there's no wrong-type case to gate the mount on.
+//
+// The baseline fetch below (action: null) is deliberately NOT gated --
+// backend/app/main.py's simulate_scenario only calls the Cortex Agent when
+// a real `action` is submitted, so this stays a free auto-mount fetch
+// (useApiData, same as before the demo gate existed). Only the "Simulate"
+// button -- the one call that actually reaches the agent -- needs the
+// passcode gate, handled inline below via its own 401 check rather than
+// useGatedAction (which assumes the whole fetch is gated).
 function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
   const { data: baseline, loading } = useApiData<ScenarioResult>(`scenario:${assetId}`, () =>
     simulateScenario(assetId, null),
@@ -117,13 +182,38 @@ function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
   const [selectedAction, setSelectedAction] = useState("")
   const [result, setResult] = useState<ScenarioResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [runFailed, setRunFailed] = useState(false)
+  const [needsPasscode, setNeedsPasscode] = useState(false)
+  const [passcodeError, setPasscodeError] = useState(false)
 
   async function runSimulation() {
     if (!selectedAction) return
     setSubmitting(true)
+    setRunFailed(false)
     try {
       setResult(await simulateScenario(assetId, selectedAction))
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearDemoToken()
+        setNeedsPasscode(true)
+      } else {
+        setRunFailed(true)
+      }
     } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function submitPasscode(passcode: string) {
+    setSubmitting(true)
+    setPasscodeError(false)
+    try {
+      const { token } = await unlockDemo(passcode)
+      setDemoToken(token)
+      setNeedsPasscode(false)
+      await runSimulation()
+    } catch {
+      setPasscodeError(true)
       setSubmitting(false)
     }
   }
@@ -183,6 +273,20 @@ function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
         </button>
       </div>
 
+      {runFailed && <p className="mt-2 text-xs text-destructive">Couldn&apos;t run that simulation — try again.</p>}
+
+      {needsPasscode && (
+        <div className="mt-2">
+          <PasscodePrompt
+            onSubmit={submitPasscode}
+            onCancel={() => setNeedsPasscode(false)}
+            busy={submitting}
+            submitLabel="Unlock & simulate"
+          />
+          {passcodeError && <p className="mt-1 text-xs text-destructive">Incorrect passcode.</p>}
+        </div>
+      )}
+
       {result && result.projections.length > 0 && (
         <>
           <p className="mt-3 text-[11px] font-medium text-muted-foreground">
@@ -218,18 +322,32 @@ function ScenarioSimulatorCard({ assetId }: { assetId: string }) {
 // records, unlike Harvest Planner which is crop-only. The backend
 // gracefully returns is_available: false (not a 400) when unavailable.
 function YieldEstimateCard({ assetId }: { assetId: string }) {
-  const { data: estimate, loading } = useApiData<YieldEstimate>(`yield-estimate:${assetId}`, () =>
-    getYieldEstimate(assetId),
-  )
+  const {
+    data: estimate,
+    loading,
+    needsPasscode,
+    passcodeError,
+    reveal,
+    submitPasscode,
+    cancelPasscode,
+  } = useGatedAction<YieldEstimate>(() => getYieldEstimate(assetId))
 
-  if (loading || !estimate) {
+  if (!estimate) {
     return (
       <Card className="p-4">
         <h3 className="flex items-center gap-2 text-sm font-bold">
           <Wheat className="size-4 text-primary" aria-hidden="true" />
           Yield Estimate
         </h3>
-        <div className="mt-2 h-10 animate-pulse rounded bg-muted" />
+        <GatedReveal
+          label="View Yield Estimate"
+          needsPasscode={needsPasscode}
+          passcodeError={passcodeError}
+          loading={loading}
+          onReveal={reveal}
+          onSubmitPasscode={submitPasscode}
+          onCancelPasscode={cancelPasscode}
+        />
       </Card>
     )
   }

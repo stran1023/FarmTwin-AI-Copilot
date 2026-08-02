@@ -1,11 +1,13 @@
 "use client"
 
-import { CalendarDays, CheckCircle2, XCircle, Clock } from "lucide-react"
+import { CalendarDays, CheckCircle2, Lock, XCircle, Clock } from "lucide-react"
 import { getAssets, getBriefing } from "@/lib/api"
 import { useApiData } from "@/lib/useApiData"
+import { useGatedAction } from "@/lib/useGatedAction"
 import { Card } from "@/components/Card"
 import { PriorityBadge } from "@/components/RiskBadge"
 import { BriefingOverview } from "@/components/BriefingOverview"
+import { PasscodePrompt } from "@/components/PasscodePrompt"
 import { cn } from "@/lib/utils"
 import type { Asset, RecommendationStatus } from "@/lib/types"
 
@@ -16,7 +18,16 @@ const STATUS_META: Record<RecommendationStatus, { label: string; icon: typeof Ch
 }
 
 export function BriefingView() {
-  const { data: briefing, loading, error } = useApiData("briefing", getBriefing)
+  const {
+    data: briefing,
+    loading,
+    error,
+    needsPasscode,
+    passcodeError,
+    reveal,
+    submitPasscode,
+    cancelPasscode,
+  } = useGatedAction(getBriefing)
   // Shares the "assets" cache key the Farm view already uses (lib/dataCache.ts)
   // -- a free cache hit if the user visited "/" this session, one extra
   // GET /assets otherwise. Used only to show each asset's real current
@@ -32,10 +43,30 @@ export function BriefingView() {
         <div>
           <h1 className="font-serif text-3xl font-semibold leading-tight text-balance">Daily Briefing</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {briefing?.date ?? "Loading today's farm summary..."}
+            {briefing?.date ?? "A real Cortex Agent call summarizes today's decisions on request."}
           </p>
         </div>
       </header>
+
+      {!briefing && !loading && !needsPasscode && (
+        <Card className="p-6">
+          <button
+            type="button"
+            onClick={reveal}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <Lock className="size-3.5" aria-hidden="true" />
+            Generate Today&apos;s Briefing
+          </button>
+        </Card>
+      )}
+
+      {needsPasscode && (
+        <Card className="p-6">
+          <PasscodePrompt onSubmit={submitPasscode} onCancel={cancelPasscode} busy={loading} />
+          {passcodeError && <p className="mt-1 text-xs text-destructive">Incorrect passcode.</p>}
+        </Card>
+      )}
 
       {loading && <SkeletonBriefing />}
 

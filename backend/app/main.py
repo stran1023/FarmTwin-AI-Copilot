@@ -380,7 +380,7 @@ async def run_daily_workflow():
     )
 
 
-@app.get("/briefing/today", response_model=BriefingToday)
+@app.get("/briefing/today", response_model=BriefingToday, dependencies=[Depends(require_demo_access)])
 async def get_briefing_today():
     rows = snowflake_client.run_query(
         "SELECT * FROM RECOMMENDATIONS "
@@ -522,7 +522,7 @@ def get_asset_detail(asset_id: str):
 _HARVEST_PLANNER_ASSET_TYPES = {"rice_field", "fruit_orchard", "greenhouse"}
 
 
-@app.get("/assets/{asset_id}/harvest-plan", response_model=HarvestPlan)
+@app.get("/assets/{asset_id}/harvest-plan", response_model=HarvestPlan, dependencies=[Depends(require_demo_access)])
 async def get_harvest_plan(asset_id: str):
     """Deterministic readiness ETA (see harvest_planner.py) narrated by the
     Cortex Agent -- the agent explains the already-computed numbers, it
@@ -579,14 +579,24 @@ async def get_harvest_plan(asset_id: str):
 
 
 @app.post("/assets/{asset_id}/simulate", response_model=ScenarioResult)
-async def simulate_scenario(asset_id: str, body: ScenarioRequest = ScenarioRequest()):
+async def simulate_scenario(
+    asset_id: str, body: ScenarioRequest = ScenarioRequest(), x_demo_token: str | None = Header(default=None)
+):
     """Deterministic what-if projection (see scenario_engine.py) narrated
     by the Cortex Agent -- same "Python computes, agent explains" split as
     get_harvest_plan (feat-055; see that feature's notes for why). Called
     with no `action` to seed the frontend's picker with the current
     risk_type's real candidate actions and a silent baseline (no agent
     call, so the initial page load isn't gated on a live LLM round trip);
-    called again with a chosen `action` to get the narrated comparison."""
+    called again with a chosen `action` to get the narrated comparison.
+
+    require_demo_access is only enforced when `action` is set, i.e. only on
+    the branch that actually calls the Cortex Agent -- unlike the other
+    gated routes, this isn't a route-level dependency, since the free
+    baseline call above must stay ungated by design."""
+    if body.action:
+        require_demo_access(x_demo_token)
+
     asset_rows = snowflake_client.run_query(
         "SELECT ASSET_ID, NAME FROM FARM_ASSETS WHERE ASSET_ID = %s", (asset_id,)
     )
@@ -658,7 +668,7 @@ async def simulate_scenario(asset_id: str, body: ScenarioRequest = ScenarioReque
     )
 
 
-@app.get("/assets/{asset_id}/yield-estimate", response_model=YieldEstimate)
+@app.get("/assets/{asset_id}/yield-estimate", response_model=YieldEstimate, dependencies=[Depends(require_demo_access)])
 async def get_yield_estimate(asset_id: str):
     """Deterministic yield estimate (see yield_estimator.py) narrated by
     the Cortex Agent -- same "Python computes, agent explains" split as
@@ -867,7 +877,7 @@ def get_dashboard_summary():
     )
 
 
-@app.post("/copilot/ask", response_model=CopilotAnswer)
+@app.post("/copilot/ask", response_model=CopilotAnswer, dependencies=[Depends(require_demo_access)])
 async def ask_copilot(body: CopilotQuestion):
     """Free-form Q&A, grounded in the farm's real current state via the
     same semantic view /workflow/run and /briefing/today use. Per

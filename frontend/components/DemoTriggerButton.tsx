@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState } from "react"
 import { PlayCircle, Loader2 } from "lucide-react"
 import { ApiError, unlockDemo, runWorkflow } from "@/lib/api"
 import { getDemoToken, setDemoToken, clearDemoToken } from "@/lib/demoAuth"
 import { invalidate } from "@/lib/dataCache"
 import { cn } from "@/lib/utils"
+import { PasscodePrompt } from "./PasscodePrompt"
 
 /**
  * Manual "advance the farm one tick" trigger for the public deployment.
@@ -18,7 +19,6 @@ import { cn } from "@/lib/utils"
  */
 export function DemoTriggerButton() {
   const [showPasscode, setShowPasscode] = useState(false)
-  const [passcode, setPasscode] = useState("")
   const [running, setRunning] = useState(false)
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null)
 
@@ -55,15 +55,13 @@ export function DemoTriggerButton() {
     }
   }
 
-  async function submitPasscode(e: FormEvent) {
-    e.preventDefault()
+  async function submitPasscode(passcode: string) {
     setRunning(true)
     setMessage(null)
     try {
       const { token } = await unlockDemo(passcode)
       setDemoToken(token)
       setShowPasscode(false)
-      setPasscode("")
       await trigger()
     } catch {
       setMessage({ text: "Incorrect passcode", isError: true })
@@ -104,38 +102,12 @@ export function DemoTriggerButton() {
 
       {showPasscode && (
         <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-border bg-card p-3 shadow-lg">
-          <form onSubmit={submitPasscode} className="flex flex-col gap-2">
-            <label htmlFor="demo-passcode" className="text-xs font-medium text-muted-foreground">
-              Judge passcode
-            </label>
-            <input
-              id="demo-passcode"
-              type="password"
-              autoFocus
-              value={passcode}
-              onChange={(e) => setPasscode(e.target.value)}
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPasscode(false)
-                  setPasscode("")
-                }}
-                className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!passcode || running}
-                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-50"
-              >
-                Unlock &amp; run
-              </button>
-            </div>
-          </form>
+          <PasscodePrompt
+            onSubmit={submitPasscode}
+            onCancel={() => setShowPasscode(false)}
+            busy={running}
+            submitLabel="Unlock & run"
+          />
         </div>
       )}
     </div>

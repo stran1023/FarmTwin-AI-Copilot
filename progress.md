@@ -3,6 +3,68 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-03
+- **Session 036 (2026-08-03): closed the remaining Cortex-Agent cost leak
+  and prepped deploy config.** User asked to plan the deploy; plan (saved
+  at the time as a Claude Code plan-mode file) split into: (1) close the
+  gap Session 035 flagged as a follow-up, (2) prep Render/Vercel config,
+  (3) manual go-live steps the user still owns.
+  - Root cause of the gap: `HarvestPlannerCard`, `ScenarioSimulatorCard`'s
+    baseline, `YieldEstimateCard` (all in
+    `frontend/components/AssetDetailPanel.tsx`), and `BriefingView.tsx`
+    all auto-fetched via `useApiData` on mount, not on click -- so just
+    browsing the 5 asset pages fired real Cortex Agent calls with zero
+    passcode friction, a bigger leak than the `/workflow/run` gate alone
+    closed.
+  - New `frontend/lib/useGatedAction.ts` (click-to-reveal counterpart to
+    `useApiData`: `reveal()`/`submitPasscode()`/`cancelPasscode()`, same
+    401-clears-token-and-reprompts behavior `DemoTriggerButton` already
+    had) and `frontend/components/PasscodePrompt.tsx` (markup extracted
+    out of `DemoTriggerButton`, now shared). Converted Harvest
+    Planner/Yield Estimate/Briefing to click-to-reveal using the hook;
+    `DemoTriggerButton` itself now renders the shared component too (logic
+    untouched, markup only).
+  - Backend: added `dependencies=[Depends(require_demo_access)]` to
+    `GET /assets/{id}/harvest-plan`, `GET /assets/{id}/yield-estimate`,
+    `POST /copilot/ask`, `GET /briefing/today`.
+  - One deliberate exception found while reading `main.py` before blanket-
+    gating everything: `POST /assets/{id}/simulate`'s baseline call
+    (`action: null`) was **already** built cost-free by design back in
+    feat-055 -- its own docstring says so, and the code path skips the
+    agent call entirely when `action` is falsy. Blanket-gating the whole
+    route would have wrongly locked a call that never cost anything.
+    Fixed by gating conditionally inside the handler
+    (`if body.action: require_demo_access(x_demo_token)`) instead of a
+    route-level dependency, and reverted `ScenarioSimulatorCard`'s
+    baseline back to its original ungated `useApiData` mount-fetch --
+    only the "Simulate" button (the one call that reaches the agent) is
+    gated, with its own inline 401-triggered passcode prompt.
+  - Verification: extended `backend/tests/test_demo_gate.py` with 6 new
+    cases covering all 5 newly gated routes, including one that proves
+    the simulate baseline is *not* gated (monkeypatches
+    `snowflake_client.run_query` to fail fast against a
+    `raise_server_exceptions=False` TestClient, so "not a 401" is provable
+    without ever reaching live Snowflake). Full suite 143/143.
+    `python -m compileall app`, `npx tsc --noEmit`, `npx eslint` all
+    clean. Real-browser check (ad hoc Playwright, deleted after): on
+    `/assets/GH-001`, Harvest Planner and Yield Estimate both show a
+    locked reveal button (not auto-loaded data), clicking opens the
+    passcode prompt, Cancel closes it; Scenario Simulator's baseline
+    shows real content immediately, confirmed no lock button renders for
+    it; `/briefing` shows a locked "Generate Today's Briefing" button.
+    Re-ran the original `DemoTriggerButton` check too, to confirm the
+    `PasscodePrompt` extraction didn't regress it -- still passes.
+  - Added `render.yaml` (Blueprint config for an always-on Render Web
+    Service under `backend/`, secrets marked `sync: false` so they're
+    never in the repo) and flipped `vercel.json`'s `deploymentEnabled` to
+    `true`.
+  - Still not done -- needs the user's own Render/Vercel accounts, which
+    this agent has no access to: (1) no real `DEMO_PASSCODE` has been
+    chosen/set anywhere yet; (2) nothing is actually deployed; (3)
+    `README.md`'s `<DEMO_URL>`/`<VIDEO_URL>`/`<DEVPOST_URL>` are still
+    placeholders; (4) CORS (`FRONTEND_URL`) can't be pointed at a real
+    frontend URL until Vercel deploy happens. Full plan/order is in this
+    session's plan-mode file (deploy steps 6-9 unexecuted).
+
 - **Session 035 (2026-08-03): built the demo passcode gate + manual
   "Run Farm Tick" trigger for the public hackathon deployment.** Not a
   `feature_list.json` item -- deployment/ops work, triggered by the user
