@@ -19,6 +19,7 @@ import type {
   Weather,
   YieldEstimate,
 } from "./types"
+import { getDemoToken } from "./demoAuth"
 
 /**
  * Typed wrappers for every backend endpoint, talking to the real FastAPI
@@ -40,10 +41,15 @@ export class ApiError extends Error {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const demoToken = getDemoToken()
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(demoToken ? { "X-Demo-Token": demoToken } : {}),
+      ...init?.headers,
+    },
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => "")
@@ -581,4 +587,45 @@ export function askCopilot(question: string): Promise<CopilotAnswer> {
     method: "POST",
     body: JSON.stringify({ question }),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Demo gate (see backend/app/services/demo_auth.py) -- guards the manual
+// "Run Farm Tick" trigger on the public hackathon deployment. A no-op
+// against a local backend with no DEMO_PASSCODE configured.
+// ---------------------------------------------------------------------------
+
+interface BackendDemoUnlockResponse {
+  token: string
+  expires_at: string
+}
+
+export function unlockDemo(passcode: string): Promise<BackendDemoUnlockResponse> {
+  return apiFetch<BackendDemoUnlockResponse>("/demo/unlock", {
+    method: "POST",
+    body: JSON.stringify({ passcode }),
+  })
+}
+
+interface BackendDailyBriefing {
+  date: string
+  assets_assessed: number
+  high_risk_assets: string[]
+  recommendations_created: BackendRecommendation[]
+  summary: string
+}
+
+export interface WorkflowRunResult {
+  assetsAssessed: number
+  highRiskCount: number
+  summary: string
+}
+
+export async function runWorkflow(): Promise<WorkflowRunResult> {
+  const r = await apiFetch<BackendDailyBriefing>("/workflow/run", { method: "POST" })
+  return {
+    assetsAssessed: r.assets_assessed,
+    highRiskCount: r.high_risk_assets.length,
+    summary: r.summary,
+  }
 }

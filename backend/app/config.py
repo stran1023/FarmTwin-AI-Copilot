@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     frontend_url: str = "http://localhost:3000"
 
+    # Shared passcode gating Cortex-Agent-triggering endpoints on the public
+    # hackathon deployment (see /demo/unlock). Empty string (the default,
+    # used by local dev and every test) disables the gate entirely -- it
+    # only takes effect once a deployment sets a real value.
+    demo_passcode: str = ""
+
     class Config:
         env_file = ".env"
 

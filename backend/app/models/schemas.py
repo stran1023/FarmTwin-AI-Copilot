@@ -149,6 +149,15 @@ class DashboardSummary(BaseModel):
     assets: list[AssetStatusSummary]
 
 
+class DemoUnlockRequest(BaseModel):
+    passcode: str
+
+
+class DemoUnlockResponse(BaseModel):
+    token: str
+    expires_at: datetime
+
+
 class CopilotQuestion(BaseModel):
     question: str
 

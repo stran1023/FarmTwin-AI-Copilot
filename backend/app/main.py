@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -18,6 +18,8 @@ from app.models.schemas import (
     CopilotQuestion,
     DailyBriefing,
     DashboardSummary,
+    DemoUnlockRequest,
+    DemoUnlockResponse,
     HarvestPlan,
     Recommendation,
     ScenarioRequest,
@@ -28,6 +30,7 @@ from app.models.schemas import (
 from app.services import (
     asset_simulator,
     cortex_agent_client,
+    demo_auth,
     harvest_planner,
     recommendation_parser,
     risk_engine,
@@ -50,6 +53,27 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def require_demo_access(x_demo_token: str | None = Header(default=None)):
+    """Depends()-guard for endpoints that trigger a real Cortex Agent call.
+
+    No-op when DEMO_PASSCODE isn't configured (local dev, every test in this
+    repo) -- only enforced once a deployment sets a real passcode."""
+    if not demo_auth.is_enabled():
+        return
+    if not x_demo_token or not demo_auth.verify_token(x_demo_token):
+        raise HTTPException(status_code=401, detail="Demo access required")
+
+
+@app.post("/demo/unlock", response_model=DemoUnlockResponse)
+def unlock_demo(body: DemoUnlockRequest):
+    if not demo_auth.is_enabled():
+        raise HTTPException(status_code=404, detail="Demo gate is not enabled")
+    if not demo_auth.check_passcode(body.passcode):
+        raise HTTPException(status_code=401, detail="Incorrect passcode")
+    token, expires_at = demo_auth.create_token()
+    return DemoUnlockResponse(token=token, expires_at=datetime.fromtimestamp(expires_at, tz=timezone.utc))
 
 
 def _latest_reading(asset_id: str) -> dict | None:
@@ -241,7 +265,7 @@ def _asset_risk_from_row(row: dict) -> AssetRisk:
     )
 
 
-@app.post("/workflow/run", response_model=DailyBriefing)
+@app.post("/workflow/run", response_model=DailyBriefing, dependencies=[Depends(require_demo_access)])
 async def run_daily_workflow():
     """
     The core demo endpoint, run once per asset per call: Observe (simulate

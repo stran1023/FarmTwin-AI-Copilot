@@ -2,7 +2,74 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-07-27
+- Last Updated: 2026-08-03
+- **Session 035 (2026-08-03): built the demo passcode gate + manual
+  "Run Farm Tick" trigger for the public hackathon deployment.** Not a
+  `feature_list.json` item -- deployment/ops work, triggered by the user
+  asking how judges try a deployed link without a stranger with the URL
+  being able to spend real Snowflake/Cortex trial credits (confirmed via
+  Snowflake billing check: ~$292 of a ~$400 trial remaining, not a CoCo
+  CLI quota as originally suspected).
+  - Design agreed with user: link stays fully public and viewable by
+    anyone; only actions that trigger a real Cortex Agent call require a
+    shared passcode (given to judges via the Devpost submission notes,
+    not the public page). `POST /workflow/run` had **zero existing
+    caller** (frontend never invoked it) -- with no scheduler in this
+    codebase, the live demo data would never move post-deployment
+    without a manual trigger, so this doubled as the first real use of
+    that endpoint.
+  - Backend: `backend/app/services/demo_auth.py` (new) -- shared-secret
+    HMAC-signed token, 12h TTL, `is_enabled()`/`check_passcode()`/
+    `create_token()`/`verify_token()`. `Settings.demo_passcode` (env
+    `DEMO_PASSCODE`, default `""`) -- **empty disables the gate
+    entirely**, so local dev and every existing test are unaffected by
+    default; only a real deployment setting a passcode turns it on.
+    `POST /demo/unlock` issues a token from the passcode;
+    `require_demo_access` (a `Depends()`) 401s on missing/bad
+    `X-Demo-Token` and is wired only onto `/workflow/run` so far --
+    `/copilot/ask`, Harvest Planner, Scenario Simulator (baseline), and
+    Yield Estimate all still auto-fire an agent call on `AssetDetailPanel`
+    mount (not click), so gating those would break "public can view"
+    without restructuring them to click-to-reveal first. Left ungated,
+    flagged as a follow-up, not fixed this session (scope was the
+    trigger button, not a full audit).
+  - Frontend: `frontend/lib/demoAuth.ts` (new, localStorage token),
+    `DemoTriggerButton.tsx` (new, in `TopNav` next to the nav links) --
+    passcode modal on first use, stores the token, calls `POST
+    /workflow/run`, invalidates the `assets` and `dashboard-summary`
+    cache keys on success so the map/dashboard refresh immediately.
+    `lib/api.ts`'s `apiFetch` now attaches `X-Demo-Token` from storage on
+    every request when present (harmless no-op against ungated routes).
+  - Verification: `cd backend && python -m compileall app` clean. New
+    `tests/test_demo_auth.py` (7 cases, pure HMAC logic) and
+    `tests/test_demo_gate.py` (8 cases) -- full suite 137/137. One dead
+    end worth recording: an early gate test let a disabled/valid-token
+    request fall through into the real `/workflow/run` handler, which
+    hung indefinitely -- it makes a real Snowflake + Open-Meteo call with
+    no timeout configured. Fixed by calling `require_demo_access`
+    directly for the "gate passes through" assertions instead of going
+    through the full endpoint (same reason this repo's other pytest
+    tests never touch live Snowflake). Live-server smoke test (`uvicorn`
+    with `DEMO_PASSCODE=testpass`, real `curl`): wrong passcode -> 401,
+    right passcode -> valid token issued, `/workflow/run` without/with a
+    bad token -> 401 -- confirmed **without** ever calling the endpoint
+    with a valid token against real Snowflake, since that would spend
+    real credits just to test. `npx tsc --noEmit` and `npx eslint` clean
+    on all changed/new frontend files. Real-browser check (Playwright,
+    ad hoc script, deleted after): button renders in `TopNav`, click
+    opens the passcode modal, Cancel closes it -- deliberately never
+    submitted the real passcode in this check for the same
+    credit-spend reason.
+  - Still open / not done this session: (1) the four mount-time agent
+    calls on the asset detail page noted above are still ungated; (2) no
+    passcode has actually been chosen/set as a real deployment secret
+    yet -- `DEMO_PASSCODE` is still unset everywhere; (3) actual
+    deployment (Vercel for frontend, an always-on host for backend --
+    Render/Railway/Fly.io, not serverless, since it holds a live
+    Snowflake connection) hasn't happened -- `vercel.json` still has
+    `deploymentEnabled: false` and `README.md`'s demo/video/devpost links
+    are still placeholders.
+
 - **Session 034 (2026-07-27): implemented and live-verified feat-056
   (Yield Estimation).** User asked whether to build the 6 items on
   `docs/FarmTwin-AI-Copilot.md`'s Roadmap. Triaged all 6: ruled out 5

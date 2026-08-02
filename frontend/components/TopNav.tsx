@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Sprout, LayoutGrid, MessageSquareText, FileText } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DemoTriggerButton } from "./DemoTriggerButton"
 
 const LINKS = [
   { href: "/", label: "Farm", icon: LayoutGrid, match: (p: string) => p === "/" || p.startsWith("/assets") },
@@ -23,26 +24,29 @@ export function TopNav() {
         <span className="font-serif text-lg font-semibold tracking-tight">FarmTwin</span>
       </Link>
 
-      <nav className="flex items-center gap-1" aria-label="Primary">
-        {LINKS.map((link) => {
-          const active = link.match(pathname)
-          const Icon = link.icon
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              <span className="hidden sm:inline">{link.label}</span>
-            </Link>
-          )
-        })}
-      </nav>
+      <div className="flex items-center gap-2">
+        <nav className="flex items-center gap-1" aria-label="Primary">
+          {LINKS.map((link) => {
+            const active = link.match(pathname)
+            const Icon = link.icon
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  active ? "bg-primary/12 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{link.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+        <DemoTriggerButton />
+      </div>
     </header>
   )
 }
