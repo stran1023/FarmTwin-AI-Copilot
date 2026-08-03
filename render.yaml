@@ -28,4 +28,4 @@ services:
       - key: DEMO_PASSCODE
         sync: false
       - key: FRONTEND_URL
-        value: http://localhost:3000 # placeholder -- set to the real Vercel URL once deployed (see docs/architecture.md deploy notes)
+        value: https://farmtwin-ai-copilot.vercel.app
