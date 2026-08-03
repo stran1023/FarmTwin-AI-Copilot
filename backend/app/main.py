@@ -1,6 +1,8 @@
+import logging
 import re
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +43,7 @@ from app.services import (
 )
 
 app = FastAPI(title="FarmTwin AI Copilot")
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -277,20 +280,28 @@ async def run_daily_workflow():
     """
     now = datetime.now(timezone.utc)
 
-    # Observe: farm-wide weather (one location now, not per-asset)
-    weather = await weather_client.get_today_reading(settings.farm_lat, settings.farm_lon)
-    snowflake_client.execute(
-        "INSERT INTO WEATHER_READINGS (ts, rainfall_mm, temp_c, humidity_pct, wind_speed_kmh, source) "
-        "VALUES (%s, %s, %s, %s, %s, %s)",
-        (
-            weather["ts"],
-            weather["rainfall_mm"],
-            weather["temp_c"],
-            weather["humidity_pct"],
-            weather["wind_speed_kmh"],
-            "open-meteo",
-        ),
-    )
+    # Observe: farm-wide weather (one location now, not per-asset). Best-effort
+    # only -- nothing below this reads `weather` back, so a flaky upstream
+    # (e.g. Open-Meteo rate-limiting Render's shared free-tier outbound IP,
+    # which other tenants' traffic can trip independently of our own call
+    # volume) shouldn't sink the whole tick's asset simulation + real Cortex
+    # Agent recommendations.
+    try:
+        weather = await weather_client.get_today_reading(settings.farm_lat, settings.farm_lon)
+        snowflake_client.execute(
+            "INSERT INTO WEATHER_READINGS (ts, rainfall_mm, temp_c, humidity_pct, wind_speed_kmh, source) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (
+                weather["ts"],
+                weather["rainfall_mm"],
+                weather["temp_c"],
+                weather["humidity_pct"],
+                weather["wind_speed_kmh"],
+                "open-meteo",
+            ),
+        )
+    except httpx.HTTPError as exc:
+        logger.warning("Skipping weather ingestion this tick -- Open-Meteo call failed: %s", exc)
 
     assets = snowflake_client.run_query("SELECT ASSET_ID, ASSET_TYPE, NAME FROM FARM_ASSETS ORDER BY ASSET_ID")
 
