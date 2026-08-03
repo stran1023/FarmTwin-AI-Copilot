@@ -1,12 +1,20 @@
+import asyncio
 from datetime import datetime, timezone
 
 import httpx
 
 from app.config import settings
 
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2
+
 
 async def fetch_forecast(lat: float, lon: float) -> dict:
-    """Pull daily rainfall / temp / humidity forecast for a farm location."""
+    """Pull daily rainfall / temp / humidity forecast for a farm location.
+
+    Retries on 429 (Open-Meteo's free tier has a burst rate limit that
+    clears within seconds -- a genuine transient condition, not a reason
+    to fail the whole workflow tick or fabricate a weather reading)."""
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -15,9 +23,13 @@ async def fetch_forecast(lat: float, lon: float) -> dict:
         "timezone": "Asia/Ho_Chi_Minh",
     }
     async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{settings.open_meteo_base_url}/forecast", params=params)
-        resp.raise_for_status()
-        return resp.json()
+        for attempt in range(_MAX_ATTEMPTS):
+            resp = await client.get(f"{settings.open_meteo_base_url}/forecast", params=params)
+            if resp.status_code == 429 and attempt < _MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
+                continue
+            resp.raise_for_status()
+            return resp.json()
 
 
 async def get_today_reading(lat: float, lon: float) -> dict:
