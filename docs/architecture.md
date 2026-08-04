@@ -50,6 +50,7 @@ more built across `feat-030`-`feat-056`. Current state, not a plan:
 | Harvest Planner (`feat-054`)        | Real — deterministic readiness-trend ETA (`backend/app/services/harvest_planner.py`) for crop assets, agent narrates |
 | Scenario Simulator (`feat-055`)     | Real — deterministic what-if intervention projection (`backend/app/services/scenario_engine.py`), agent narrates |
 | Yield Estimation (`feat-056`)       | Real — deterministic yield estimate from real `ASSET_HISTORY` records × current health score (`backend/app/services/yield_estimator.py`), agent narrates, all 5 asset types |
+| Live workflow progress panel (`feat-057`) | Real — `POST /workflow/run/start` + `GET /workflow/run/status/{job_id}` (polled), reports real per-asset step + metric as `/workflow/run`'s loop actually runs |
 
 ## Farm Assets (replaces the 15-rice-farm model)
 

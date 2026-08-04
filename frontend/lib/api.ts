@@ -17,6 +17,8 @@ import type {
   Task,
   HistoryEvent,
   Weather,
+  WorkflowAssetProgress,
+  WorkflowJobStatus,
   YieldEstimate,
 } from "./types"
 import { getDemoToken } from "./demoAuth"
@@ -615,17 +617,62 @@ interface BackendDailyBriefing {
   summary: string
 }
 
-export interface WorkflowRunResult {
-  assetsAssessed: number
-  highRiskCount: number
-  summary: string
+interface BackendWorkflowAssetProgress {
+  asset_id: string
+  name: string
+  step: "queued" | "observing" | "assessing" | "consulting_agent" | "done"
+  risk_level: "low" | "medium" | "high" | "critical" | null
+  metric_snippet: string | null
+  recommendations_count: number
 }
 
-export async function runWorkflow(): Promise<WorkflowRunResult> {
-  const r = await apiFetch<BackendDailyBriefing>("/workflow/run", { method: "POST" })
+interface BackendWorkflowJobStatus {
+  job_id: string
+  status: "running" | "complete" | "error"
+  started_at: string
+  assets: Record<string, BackendWorkflowAssetProgress>
+  result: BackendDailyBriefing | null
+  error: string | null
+}
+
+// POST /workflow/run/start returns immediately with a job_id -- the caller
+// polls getWorkflowStatus() to render live per-asset progress instead of
+// blocking on the multi-minute POST /workflow/run for up to 5 real
+// sequential Cortex Agent calls with zero feedback in between.
+export async function startWorkflow(): Promise<string> {
+  const r = await apiFetch<{ job_id: string }>("/workflow/run/start", { method: "POST" })
+  return r.job_id
+}
+
+// Read-only, never sends X-Demo-Token-requiring work -- safe to poll on an
+// interval without re-triggering anything on the backend.
+export async function getWorkflowStatus(jobId: string): Promise<WorkflowJobStatus> {
+  const r = await apiFetch<BackendWorkflowJobStatus>(`/workflow/run/status/${jobId}`)
   return {
-    assetsAssessed: r.assets_assessed,
-    highRiskCount: r.high_risk_assets.length,
-    summary: r.summary,
+    jobId: r.job_id,
+    status: r.status,
+    // Object.values preserves insertion order for string keys, and the
+    // backend inserts assets in the same ASSET_ID order it processes them
+    // in (main.py's start_daily_workflow pre-fetch and _run_workflow's own
+    // loop both use "ORDER BY ASSET_ID"), so display order matches real
+    // processing order.
+    assets: Object.values(r.assets).map(
+      (a): WorkflowAssetProgress => ({
+        asset_id: a.asset_id,
+        name: a.name,
+        step: a.step,
+        risk_level: a.risk_level,
+        metric_snippet: a.metric_snippet,
+        recommendations_count: a.recommendations_count,
+      }),
+    ),
+    result: r.result
+      ? {
+          assetsAssessed: r.result.assets_assessed,
+          highRiskCount: r.result.high_risk_assets.length,
+          summary: r.result.summary,
+        }
+      : null,
+    error: r.error,
   }
 }

@@ -97,6 +97,31 @@ class DailyBriefing(BaseModel):
     summary: str
 
 
+WorkflowStep = Literal["queued", "observing", "assessing", "consulting_agent", "done"]
+
+
+class AssetProgress(BaseModel):
+    asset_id: str
+    name: str
+    step: WorkflowStep
+    risk_level: RiskLevel | None = None
+    metric_snippet: str | None = None
+    recommendations_count: int = 0
+
+
+class WorkflowJobStatus(BaseModel):
+    job_id: str
+    status: Literal["running", "complete", "error"]
+    started_at: datetime
+    assets: dict[str, AssetProgress]
+    result: DailyBriefing | None = None
+    error: str | None = None
+
+
+class WorkflowStartResponse(BaseModel):
+    job_id: str
+
+
 class BriefingToday(BaseModel):
     date: datetime
     approved_recommendations: list[Recommendation]

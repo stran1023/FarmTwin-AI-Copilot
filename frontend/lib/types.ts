@@ -137,6 +137,27 @@ export interface ScenarioResult {
   narrative?: string
 }
 
+export type WorkflowStep = "queued" | "observing" | "assessing" | "consulting_agent" | "done"
+
+export type WorkflowRiskLevel = "low" | "medium" | "high" | "critical"
+
+export interface WorkflowAssetProgress {
+  asset_id: string
+  name: string
+  step: WorkflowStep
+  risk_level: WorkflowRiskLevel | null
+  metric_snippet: string | null
+  recommendations_count: number
+}
+
+export interface WorkflowJobStatus {
+  jobId: string
+  status: "running" | "complete" | "error"
+  assets: WorkflowAssetProgress[]
+  result: { assetsAssessed: number; highRiskCount: number; summary: string } | null
+  error: string | null
+}
+
 export interface YieldEstimate {
   is_available: boolean
   reason?: string

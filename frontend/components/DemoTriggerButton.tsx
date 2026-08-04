@@ -2,71 +2,77 @@
 
 import { useState } from "react"
 import { PlayCircle, Loader2 } from "lucide-react"
-import { ApiError, unlockDemo, runWorkflow } from "@/lib/api"
+import { ApiError, unlockDemo, startWorkflow } from "@/lib/api"
 import { getDemoToken, setDemoToken, clearDemoToken } from "@/lib/demoAuth"
 import { invalidate } from "@/lib/dataCache"
-import { cn } from "@/lib/utils"
 import { PasscodePrompt } from "./PasscodePrompt"
+import { WorkflowProgressPanel } from "./WorkflowProgressPanel"
 
 /**
  * Manual "advance the farm one tick" trigger for the public deployment.
  * There's no scheduler -- POST /workflow/run has no other caller -- so this
  * button is the only way the demo's live data actually moves during
  * judging. Gated by the same passcode as the backend's require_demo_access
- * dependency: a stored token skips straight to running; no token prompts
+ * dependency: a stored token skips straight to starting; no token prompts
  * for the passcode first. Against a local backend with no DEMO_PASSCODE
  * set, the backend gate is a no-op, so the passcode prompt never appears.
+ *
+ * Starts the job (POST /workflow/run/start) and hands off to
+ * WorkflowProgressPanel for live per-asset polling, rather than blocking on
+ * the multi-minute POST /workflow/run with no feedback in between.
  */
 export function DemoTriggerButton() {
   const [showPasscode, setShowPasscode] = useState(false)
-  const [running, setRunning] = useState(false)
-  const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [passcodeError, setPasscodeError] = useState(false)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
 
-  async function trigger() {
-    setRunning(true)
-    setMessage(null)
+  async function start() {
+    setStarting(true)
     try {
-      const result = await runWorkflow()
-      invalidate("assets")
-      invalidate("dashboard-summary")
-      setMessage({
-        text: `Tick complete — ${result.assetsAssessed} assets assessed, ${result.highRiskCount} at risk`,
-        isError: false,
-      })
+      const jobId = await startWorkflow()
+      setActiveJobId(jobId)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         clearDemoToken()
         setShowPasscode(true)
-        setMessage({ text: "Session expired — enter the passcode again", isError: true })
-      } else {
-        setMessage({ text: "Couldn't run the tick — try again", isError: true })
+        setPasscodeError(false)
       }
+      // Other errors: the button just returns to its idle state -- nothing
+      // was started, so there's no partial progress to show.
     } finally {
-      setRunning(false)
-      window.setTimeout(() => setMessage(null), 6000)
+      setStarting(false)
     }
   }
 
   function handleClick() {
     if (getDemoToken()) {
-      void trigger()
+      void start()
     } else {
       setShowPasscode(true)
     }
   }
 
   async function submitPasscode(passcode: string) {
-    setRunning(true)
-    setMessage(null)
+    setStarting(true)
+    setPasscodeError(false)
     try {
       const { token } = await unlockDemo(passcode)
       setDemoToken(token)
       setShowPasscode(false)
-      await trigger()
+      await start()
     } catch {
-      setMessage({ text: "Incorrect passcode", isError: true })
-      setRunning(false)
+      setPasscodeError(true)
+      setStarting(false)
     }
+  }
+
+  function handleJobDone() {
+    // Fires on both "complete" and "error" -- even a failed job may have
+    // written real Snowflake rows for whichever assets it got through
+    // before failing, so the dashboard/map should refresh either way.
+    invalidate("assets")
+    invalidate("dashboard-summary")
   }
 
   return (
@@ -74,11 +80,11 @@ export function DemoTriggerButton() {
       <button
         type="button"
         onClick={handleClick}
-        disabled={running}
+        disabled={starting || activeJobId !== null}
         title="Run a farm simulation tick — advances sensor readings, risk assessment, and AI recommendations"
         className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
       >
-        {running ? (
+        {starting ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         ) : (
           <PlayCircle className="h-4 w-4" aria-hidden="true" />
@@ -86,29 +92,20 @@ export function DemoTriggerButton() {
         <span className="hidden sm:inline">Run Farm Tick</span>
       </button>
 
-      {message && (
-        <div
-          role="status"
-          className={cn(
-            "absolute right-0 top-full z-10 mt-1 w-60 rounded-lg border px-3 py-2 text-xs shadow-md",
-            message.isError
-              ? "border-destructive/40 bg-destructive/10 text-destructive"
-              : "border-border bg-card text-muted-foreground",
-          )}
-        >
-          {message.text}
-        </div>
-      )}
-
       {showPasscode && (
         <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-border bg-card p-3 shadow-lg">
           <PasscodePrompt
             onSubmit={submitPasscode}
             onCancel={() => setShowPasscode(false)}
-            busy={running}
+            busy={starting}
             submitLabel="Unlock & run"
           />
+          {passcodeError && <p className="mt-1 text-xs text-destructive">Incorrect passcode</p>}
         </div>
+      )}
+
+      {activeJobId && (
+        <WorkflowProgressPanel jobId={activeJobId} onDone={handleJobDone} onClose={() => setActiveJobId(null)} />
       )}
     </div>
   )

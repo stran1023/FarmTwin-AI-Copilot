@@ -2,7 +2,141 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-08-03
+- Last Updated: 2026-08-04
+- **Session 037 (2026-08-04): completed the actual Render + Vercel go-live
+  Session 036 prepped but didn't execute, found and fixed 2 real deploy-only
+  bugs, and shipped feat-057 (live per-asset progress panel) in response to
+  user feedback that the deployed demo looked broken.** User asked to assess
+  hackathon-requirement fit (video length, "workflow executed via CoCo CLI,"
+  1+ working workflow, 2-3 skills demonstrated), then to draft a video
+  script and actually deploy, with one hard constraint: zero hosting cost.
+  - Recommended (agreed by user): frame CoCo CLI as the tool that built the
+    Snowflake-side objects the workflow runs against (matches
+    docs/challenge.md's "effective CoCo CLI orchestration" judging
+    criterion), rather than fabricating a fake runtime CoCo dependency this
+    app's real architecture doesn't have (`cortex_agent_client.py` calls the
+    Cortex Agents REST API directly, confirmed by reading it live). Saved
+    `docs/video-script.md` (shot-by-shot, ~4:30 runtime, recording checklist
+    at the end including "deployment live, not local dev" and "pre-warm
+    Render's free instance first").
+  - Generated a random `DEMO_PASSCODE` for the user to store outside the
+    repo (never written to any file here).
+  - **Render deploy, hit and fixed 2 real bugs neither showed up locally:**
+    (1) Render's GitHub App wasn't granted repo access -- a permissions fix
+    on GitHub's side, not code. (2) `render.yaml`'s `PYTHON_VERSION: 3.11.2`
+    built successfully at the `pip install` step but then failed at
+    container start with the interpreter binary missing entirely
+    (`/opt/.../Python-3.11.2/bin/python3.11: No such file or directory`) --
+    root-caused via Render's own docs (WebFetch): Render claims support for
+    "any released version from 3.7.3 onward" but only pre-caches a subset of
+    patch builds; less-common ones silently fail to actually install. Fixed
+    by switching to `3.11.9`, a version Render's docs explicitly list as
+    pre-built. Added `plan: free` to `render.yaml` explicitly (was unset,
+    risking a default to a paid tier in Render's Blueprint UI).
+  - **Vercel deploy:** root directory set to `frontend/`,
+    `NEXT_PUBLIC_API_URL` pointed at the real Render URL. Once both were
+    live, updated `render.yaml`'s `FRONTEND_URL` (was still the localhost
+    placeholder) to the real Vercel URL for CORS.
+  - **Live-verified the deploy without ever spending a real Cortex Agent
+    call from a script:** confirmed `/health` live; confirmed the demo gate
+    itself (`/demo/unlock` wrong/right passcode, `/workflow/run` with no
+    token) via curl -- deliberately left the one real gated action (Run Farm
+    Tick) for the user to trigger once, on purpose, through the real UI,
+    matching this repo's standing precedent of never spending real credits
+    from an automated check.
+  - **Bug 1 (found live via the user's own click): `POST /workflow/run`
+    500'd on a `429 Too Many Requests` from Open-Meteo.** Real root cause,
+    confirmed via WebSearch against Render's own community forum: free-tier
+    outbound IPs are shared across every other free customer in the same
+    region, and Open-Meteo rate-limits by IP -- so this can happen
+    independent of this app's own call volume, not fixable by "call it
+    less." Two-part fix: (a) `weather_client.fetch_forecast` now retries up
+    to 3 attempts with backoff on a 429 specifically (new
+    `tests/test_weather_client.py`, 4 cases, `httpx.MockTransport` --
+    caught and fixed a real self-reference bug in the test's own mock setup
+    along the way: patching `httpx.AsyncClient` and then constructing the
+    replacement via `httpx.AsyncClient(transport=...)` from inside itself
+    recurses into the patched version). (b) More importantly: confirmed
+    `weather` is never read anywhere past its own `WEATHER_READINGS` insert,
+    so `main.py`'s `run_daily_workflow` now wraps just that step in
+    `try/except httpx.HTTPError`, logs, and continues -- a flaky third-party
+    call no longer sinks the whole tick's real asset simulation + Cortex
+    Agent recommendations (new `tests/test_workflow_weather_resilience.py`).
+    148/148 backend tests passing after this fix.
+  - **feat-057, same session: user reported the (now-working) Run Farm Tick
+    button gave zero feedback for its full ~3-5 minute runtime and asked to
+    visualize the process "so judges can understand deeply."** Put one
+    design fork to the user via `AskUserQuestion` (step-name-only vs.
+    step-name-plus-live-metric-snippet) -- user chose the richer option.
+    Chose polling over SSE/streaming specifically because this same
+    session had already hit two unrelated real infra rough edges on
+    Render's free tier + Cloudflare (the Python version bug, the weather
+    429), so a long-lived streaming connection through that same stack was
+    judged a needless new risk versus a plain poll-every-2s GET.
+    - Backend: new `backend/app/services/workflow_jobs.py` (in-memory job
+      store -- safe since Render's own deploy log confirms
+      `WEB_CONCURRENCY=1`, a single worker). `main.py`'s
+      `run_daily_workflow` loop body refactored into a shared
+      `_run_workflow(job_id)` core that optionally reports progress via
+      `workflow_jobs.update_asset()` at each Observe/Understand/Recommend
+      transition, plus a new `_metric_snippet()` helper reusing
+      `risk_engine.trend_metric()`'s existing risk_type->field mapping (the
+      panel's live numbers are the same real values risk_engine itself
+      already computes, not an invented display). Original
+      `POST /workflow/run` kept contract-identical (`job_id=None`) for
+      backward compat -- confirmed via the full pre-existing test suite
+      passing unchanged. New `POST /workflow/run/start` (gated, returns a
+      `job_id` immediately, runs the real workflow via
+      `asyncio.create_task`) and `GET /workflow/run/status/{job_id}`
+      (ungated -- read-only, never triggers a Cortex call). New
+      `tests/test_workflow_jobs.py` (6 cases, pure in-memory logic) and
+      `tests/test_metric_snippet.py` (4 cases, including a monkeypatched
+      fallback-label case for a future risk_type/field pair not yet in
+      `_METRIC_LABELS`), plus 2 new gate/404 cases added to
+      `test_demo_gate.py`. 161/161 backend tests passing.
+    - Frontend: new `components/WorkflowProgressPanel.tsx` -- polls via a
+      self-scheduling `setTimeout` (not `setInterval`, to avoid overlapping
+      requests if a poll is slow) every 2s; caught and fixed a real
+      stale-closure bug in an earlier draft (checking React state directly
+      inside a `setInterval` callback never sees updates, since the closure
+      captures the value from when the effect first ran). `lib/api.ts`
+      gained `startWorkflow()`/`getWorkflowStatus()`, replacing the old
+      blocking `runWorkflow()` (removed, no longer called anywhere).
+      `DemoTriggerButton.tsx` now starts the job and hands off to the panel
+      instead of blocking. `npx tsc --noEmit`, `npm run lint`,
+      `npm run build`: all clean.
+    - **Live-verified against the real local backend + live Snowflake
+      account** (ad hoc Playwright, deleted after -- seeded a local demo
+      token via `localStorage` to reach the button without a passcode
+      prompt, safe since the local backend has no `DEMO_PASSCODE` set and
+      the gate is a documented no-op regardless of token value): captured a
+      full real ~190s run start to finish. t=0.0s all 5 assets "Waiting...";
+      t=6.2s Layer House North/Mango Grove West already "Low risk -- no
+      action needed" (correctly skipped the Cortex call) while Tilapia Pond
+      A shows "Consulting Cortex Agent (DO: 2.0 mg/L)..." with a real live
+      sensor value; t=93.0s Tilapia Pond A "4 recommendation(s) ready (DO:
+      2.0 mg/L)", Greenhouse A now "Consulting Cortex Agent (Disease risk:
+      33.66 %)..."; t=189.1s all 5 done, "Tick complete -- 5 assets
+      assessed, 2 at risk," Close button appears. Zero console errors.
+      Screenshot confirmed the panel's final tally exactly matches the
+      map's own independently-computed status pill (Critical 1 / Attention
+      1 / Healthy 3). Killed the local uvicorn + next dev processes and
+      confirmed both ports clear afterward.
+    - `feat-057` added directly to `passing` in `feature_list.json` (full
+      evidence trail, 5 entries) -- implemented and live-verified in one
+      continuous session, not staged across sessions like most other
+      features here.
+  - Still open: (1) the completed weather-resilience + progress-panel
+    commits need to be pushed and Render/Vercel need to pick up the latest
+    deploy; (2) a live end-to-end re-verification of feat-057 specifically
+    *against the deployed* Render+Vercel stack (not just local) hasn't run
+    yet -- local verification proves the mechanism works, but the deployed
+    stack's own quirks (cold starts, shared-IP weather 429s) haven't been
+    exercised against this specific new code path; (3) `README.md`'s
+    `<DEMO_URL>`/`<VIDEO_URL>`/`<DEVPOST_URL>` placeholders are still
+    unfilled; (4) the optional free uptime-pinger (UptimeRobot/cron-job.org
+    hitting `/health`) was discussed but not set up; (5) no demo video has
+    been recorded yet.
 - **Session 036 (2026-08-03): closed the remaining Cortex-Agent cost leak
   and prepped deploy config.** User asked to plan the deploy; plan (saved
   at the time as a Claude Code plan-mode file) split into: (1) close the

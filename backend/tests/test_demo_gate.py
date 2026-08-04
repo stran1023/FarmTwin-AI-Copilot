@@ -112,6 +112,20 @@ def test_simulate_with_action_blocked_without_token(monkeypatch):
     assert res.status_code == 401
 
 
+def test_workflow_run_start_blocked_without_token(monkeypatch):
+    monkeypatch.setattr(settings, "demo_passcode", "letmein")
+    res = client.post("/workflow/run/start")
+    assert res.status_code == 401
+
+
+def test_workflow_status_unknown_job_returns_404():
+    """Read-only, so unlike /workflow/run/start this route carries no
+    require_demo_access dependency -- confirms it's reachable (and correctly
+    404s on a bogus id) even with no token and no live job."""
+    res = client.get("/workflow/run/status/does-not-exist")
+    assert res.status_code == 404
+
+
 def test_simulate_without_action_is_not_gated(monkeypatch):
     """The free baseline call (no `action`) must reach the handler even
     with no token -- it never calls the Cortex Agent, so it's deliberately

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -27,6 +28,8 @@ from app.models.schemas import (
     ScenarioRequest,
     ScenarioResult,
     WeatherReading,
+    WorkflowJobStatus,
+    WorkflowStartResponse,
     YieldEstimate,
 )
 from app.services import (
@@ -39,6 +42,7 @@ from app.services import (
     scenario_engine,
     snowflake_client,
     weather_client,
+    workflow_jobs,
     yield_estimator,
 )
 
@@ -268,16 +272,39 @@ def _asset_risk_from_row(row: dict) -> AssetRisk:
     )
 
 
-@app.post("/workflow/run", response_model=DailyBriefing, dependencies=[Depends(require_demo_access)])
-async def run_daily_workflow():
-    """
-    The core demo endpoint, run once per asset per call: Observe (simulate
-    + persist the next sensor reading) -> Understand (rule-based risk
-    assessment) -> Recommend (real Cortex Agent call for at-risk assets,
-    parsed into structured 6-field recommendations) -> Predict (trend
-    projection vs. the previous reading, stored alongside the current risk
-    assessment).
-    """
+# reading field -> (short label, unit), for the live progress panel's
+# per-asset metric snippet (e.g. "DO: 2.0 mg/L"). Only covers fields
+# risk_engine.trend_metric() can point at -- the same fields already used
+# to decide risk, not an invented display.
+_METRIC_LABELS = {
+    "dissolved_oxygen_mg_l": ("DO", "mg/L"),
+    "water_temp_c": ("Water temp", "°C"),
+    "air_temp_c": ("Air temp", "°C"),
+    "feed_level_pct": ("Feed level", "%"),
+    "soil_moisture_pct": ("Soil moisture", "%"),
+    "nitrogen_ppm": ("Nitrogen", "ppm"),
+    "disease_risk_pct": ("Disease risk", "%"),
+    "co2_ppm": ("CO2", "ppm"),
+}
+
+
+def _metric_snippet(risk_type: str, reading: dict) -> str | None:
+    trend = risk_engine.trend_metric(risk_type)
+    if not trend:
+        return None
+    field, _direction = trend
+    value = reading.get(field)
+    if value is None:
+        return None
+    label, unit = _METRIC_LABELS.get(field, (field.replace("_", " ").title(), ""))
+    return f"{label}: {value} {unit}".strip()
+
+
+async def _run_workflow(job_id: str | None) -> DailyBriefing:
+    """Shared core for both POST /workflow/run (blocking, job_id=None) and
+    the POST /workflow/run/start + GET /workflow/run/status/{job_id} pair
+    (job_id set, so each step updates workflow_jobs for the frontend's
+    live progress panel to poll)."""
     now = datetime.now(timezone.utc)
 
     # Observe: farm-wide weather (one location now, not per-asset). Best-effort
@@ -313,15 +340,25 @@ async def run_daily_workflow():
         asset_id, asset_type, name = asset["ASSET_ID"], asset["ASSET_TYPE"], asset["NAME"]
 
         # Observe
+        if job_id:
+            workflow_jobs.update_asset(job_id, asset_id, step="observing")
         previous = _latest_reading(asset_id)
         reading = asset_simulator.next_reading(asset_type, previous)
         _insert_reading(asset_id, now, reading)
 
         # Understand
+        if job_id:
+            workflow_jobs.update_asset(job_id, asset_id, step="assessing")
         risk_type, risk_level, notes = risk_engine.assess_risk(asset_type, reading)
         _insert_risk(asset_id, now, risk_type, risk_level, notes)
+        if job_id:
+            workflow_jobs.update_asset(
+                job_id, asset_id, risk_level=risk_level, metric_snippet=_metric_snippet(risk_type, reading)
+            )
 
         if risk_level == "low":
+            if job_id:
+                workflow_jobs.update_asset(job_id, asset_id, step="done")
             continue
         high_risk_assets.append(asset_id)
 
@@ -331,6 +368,8 @@ async def run_daily_workflow():
             _insert_risk(asset_id, now, f"{risk_type}_forecast_24h", risk_level, prediction)
 
         # Recommend -- real Cortex Agent call, grounded in this asset's current state
+        if job_id:
+            workflow_jobs.update_asset(job_id, asset_id, step="consulting_agent")
         prompt = (
             f"Assess {name} ({asset_id}, a {asset_type.replace('_', ' ')}) current condition "
             f"and give your recommendations in the required 6-field format."
@@ -338,7 +377,8 @@ async def run_daily_workflow():
         agent_text = _clean_agent_answer(await cortex_agent_client.ask_agent(prompt))
         narrative_parts.append(f"{name}: {agent_text[:280]}")
 
-        for idx, rec in enumerate(recommendation_parser.parse_recommendations(agent_text), start=1):
+        asset_recs = recommendation_parser.parse_recommendations(agent_text)
+        for idx, rec in enumerate(asset_recs, start=1):
             rec_id = _recommendation_id(asset_id, now, idx)
             stock = rec.get("stock_availability")
             snowflake_client.execute(
@@ -375,6 +415,9 @@ async def run_daily_workflow():
                 )
             )
 
+        if job_id:
+            workflow_jobs.update_asset(job_id, asset_id, step="done", recommendations_count=len(asset_recs))
+
     summary = (
         f"Assessed {len(assets)} assets; {len(high_risk_assets)} flagged at medium+ risk "
         f"with {len(recommendations_created)} new recommendation(s) pending approval."
@@ -389,6 +432,52 @@ async def run_daily_workflow():
         recommendations_created=recommendations_created,
         summary=summary,
     )
+
+
+@app.post("/workflow/run", response_model=DailyBriefing, dependencies=[Depends(require_demo_access)])
+async def run_daily_workflow():
+    """
+    The core demo endpoint, run once per asset per call: Observe (simulate
+    + persist the next sensor reading) -> Understand (rule-based risk
+    assessment) -> Recommend (real Cortex Agent call for at-risk assets,
+    parsed into structured 6-field recommendations) -> Predict (trend
+    projection vs. the previous reading, stored alongside the current risk
+    assessment). Blocks until the whole tick finishes -- see
+    POST /workflow/run/start for a version that returns immediately and
+    reports live per-asset progress instead.
+    """
+    return await _run_workflow(job_id=None)
+
+
+@app.post("/workflow/run/start", response_model=WorkflowStartResponse, dependencies=[Depends(require_demo_access)])
+async def start_daily_workflow():
+    """Kicks off the same real workflow as POST /workflow/run but returns
+    immediately with a job_id -- the frontend polls GET
+    /workflow/run/status/{job_id} for live per-asset progress instead of
+    waiting silently on one multi-minute blocking call."""
+    assets = snowflake_client.run_query("SELECT ASSET_ID, NAME FROM FARM_ASSETS ORDER BY ASSET_ID")
+    job_id = workflow_jobs.create_job([(a["ASSET_ID"], a["NAME"]) for a in assets])
+
+    async def _runner():
+        try:
+            result = await _run_workflow(job_id=job_id)
+            workflow_jobs.mark_complete(job_id, result.model_dump(mode="json"))
+        except Exception as exc:  # noqa: BLE001 -- a background task's exception must be captured, not lost
+            logger.exception("workflow job %s failed", job_id)
+            workflow_jobs.mark_error(job_id, str(exc))
+
+    asyncio.create_task(_runner())
+    return WorkflowStartResponse(job_id=job_id)
+
+
+@app.get("/workflow/run/status/{job_id}", response_model=WorkflowJobStatus)
+def get_workflow_status(job_id: str):
+    """Read-only -- never triggers a Cortex Agent call itself, so unlike
+    /workflow/run/start this isn't gated by require_demo_access."""
+    job = workflow_jobs.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown job_id")
+    return job
 
 
 @app.get("/briefing/today", response_model=BriefingToday, dependencies=[Depends(require_demo_access)])
