@@ -81,6 +81,15 @@ _DEFAULT_SEEDS: dict[str, dict[str, float]] = {
 }
 
 
+def default_seed(asset_type: str) -> dict[str, float]:
+    """Public accessor for _DEFAULT_SEEDS -- scripts/reset_demo_state.py uses
+    this to seed a genuinely healthy baseline reading per asset type, so its
+    "healthy" values can never drift out of sync with the simulator's own
+    idea of a healthy starting point. Same precedent as risk_engine.py's
+    trend_metric() accessor for _TREND_METRIC."""
+    return dict(_DEFAULT_SEEDS.get(asset_type, {}))
+
+
 def metric_bounds() -> dict[str, tuple[float, float]]:
     """Public (low, high) bounds per reading field, flattened across asset
     types -- scenario_engine.py uses these to clamp its own projections so

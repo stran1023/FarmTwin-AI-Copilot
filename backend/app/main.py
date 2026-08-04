@@ -934,10 +934,15 @@ def get_dashboard_summary():
         )
     farm_health_score = round(sum(scores) / len(scores)) if scores else 0
 
+    # Each asset's CURRENT risk (its own latest row, whatever level that is),
+    # THEN filtered to high/critical -- not "the latest row that happened to
+    # be high/critical," which would keep surfacing a resolved issue forever
+    # once a newer, lower-risk reading has already superseded it for that asset.
     alert_rows = snowflake_client.run_query(
-        "SELECT * FROM ASSET_RISK_ASSESSMENTS "
-        "WHERE RISK_LEVEL IN ('high', 'critical') AND RISK_TYPE NOT LIKE '%%_forecast_24h' "
-        "QUALIFY ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY TS DESC) = 1 "
+        "SELECT * FROM ("
+        "  SELECT *, ROW_NUMBER() OVER (PARTITION BY ASSET_ID ORDER BY TS DESC) AS RN "
+        "  FROM ASSET_RISK_ASSESSMENTS WHERE RISK_TYPE NOT LIKE '%%_forecast_24h'"
+        ") WHERE RN = 1 AND RISK_LEVEL IN ('high', 'critical') "
         "ORDER BY TS DESC"
     )
     active_alerts = [_asset_risk_from_row(r) for r in alert_rows]

@@ -3,6 +3,59 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-05
+- **Session 038 continued (2026-08-05): implemented and live-verified
+  feat-060 -- replaced the default demo reset state with a genuinely
+  healthy baseline, tuned for a real single-tick escalation, per the
+  user's explicit "replace the default" decision.** Before writing any
+  code, checked the real math in asset_simulator.py/risk_engine.py rather
+  than assuming a dramatic healthy->critical flip was achievable in one
+  tick: given the simulator's real bounded per-tick step sizes vs. each
+  threshold's real distance from a healthy value, NO metric can cross
+  from genuinely healthy to critical severity in a single tick without
+  fabricating data. The one exception found: chicken_coop's
+  feed_level_pct carries a constant -2.0/tick drift (feed genuinely
+  depletes, not a random walk) against a 15.0 threshold that maps to a
+  real UI-critical (red) status -- seeded at 17.0 (still real "low" risk
+  at rest) gives a real ~50% chance of a genuine critical flip on the
+  first live click.
+  - Added asset_simulator.default_seed() (public accessor, same pattern
+    as risk_engine.py's existing trend_metric()) and rewrote
+    scripts/reset_demo_state.py (previously fish-pond-crisis-only) to
+    seed a healthy reading for all 5 real assets, with the one deliberate
+    near-threshold override, and to compute each seeded risk row via the
+    real risk_engine.assess_risk() rather than a hand-typed guess.
+  - Found and fixed a real, pre-existing bug during live verification:
+    GET /dashboard/summary's active_alerts query picked the latest row
+    PER ASSET AMONG ONLY high/critical rows, so a resolved issue kept
+    surfacing as "active" forever even after a newer low-risk reading
+    superseded it. Fixed to resolve each asset's true current row first,
+    then filter to high/critical -- necessary for the new healthy
+    baseline's "zero active alerts" requirement to actually hold.
+  - Live verification against the real Snowflake account: dry-run
+    confirmed risk=low for all 5 real assets including the tuned Chicken
+    Coop override; a real (non-dry-run) run then confirmed via GET
+    /assets and GET /dashboard/summary: all 5 healthy/90, farm_health_score=90,
+    active_alerts=0 (was 2 stale entries before the SQL fix), tasks_due_today=0.
+    A real POST /workflow/run against that fresh baseline then genuinely
+    escalated: Chicken Coop's feed dropped from 17.0% to 12.6% (crossed
+    15.0 as designed) with 3 real new Cortex Agent recommendations.
+  - **Also found, live, that the original claim ("only the chicken coop
+    can flip in one tick") was incomplete** -- the Tilapia Pond's
+    dissolved_oxygen_mg_l real-walked from its 6.0 seed into real
+    "medium" risk (yellow) too, because that seed sits exactly at
+    risk_engine.py's 6.0 threshold, which hadn't been checked precisely
+    enough beforehand. Corrected to the user live rather than glossed
+    over -- a net positive for the demo (two independent real chances of
+    visible change), not a defect, but a real example of "verify against
+    live data before trusting your own math."
+  - Re-ran the reset script after verification to leave the live account
+    in the clean healthy baseline as the actual end-of-session state.
+    Killed local uvicorn cleanly; port 8000 confirmed clear.
+  - Explicitly flagged as out of scope, not actioned without the user's
+    confirmation: charts (still nothing in this codebase), and a distinct
+    "Critical Farm Changes Detected" variant of feat-059's success banner
+    (currently always positive-framed regardless of outcome).
+    feature_list.json's feat-060 status: passing.
 - **Session 038 (2026-08-05): implemented and live-verified feat-058
   (before/after value-diff highlight for Run Farm Tick), following a
   demo-flow review.** User described a hackathon demo flow (dashboard opens
