@@ -60,6 +60,43 @@
     Agent run just to watch a timer fire.
   - Killed local uvicorn + next dev cleanly after verification; both ports
     confirmed clear. feature_list.json's feat-058 status: passing.
+  - **Same session, direct follow-up -- feat-059 (cinematic multi-phase
+    processing sequence + success transformation):** user asked to replace
+    the plain "Starting..." spinner with a richer sequence (their own
+    suggested lines included "Connecting to CoCo...", "Running Cortex
+    analysis...", etc.) plus a clear success transformation at the end.
+    Flagged to the user before building: "Connecting to CoCo" is factually
+    false about this app's runtime (CoCo only builds the Snowflake objects
+    at dev time -- see CLAUDE.md and Session 037's explicit decision not to
+    fabricate a runtime CoCo dependency; cortex_agent_client.py calls the
+    Cortex Agents REST API directly). Substituted "Connecting to the Cortex
+    Agent..." instead, and merged "Evaluating crop health"/"Generating AI
+    recommendations" into the pre-existing real per-asset list (which
+    already shows exactly that, per asset) rather than duplicating them as
+    fake global lines.
+  - Rewrote WorkflowProgressPanel.tsx as an explicit phase state machine:
+    intro (3 simulated, clearly-decorative lines, ~650ms cadence with
+    checkmarks) -> live (the existing real per-asset polling list, now with
+    a staggered fade-in) -> outro (one decorative "Saving..." beat) ->
+    refreshing (REAL -- awaits the same onDone(job) promise that drives
+    feat-058's real diff computation, so "Refreshing dashboard insights..."
+    is on screen exactly as long as that real work takes) -> done (real
+    success screen with real stats from job.result + feat-058's TickDiff,
+    or the existing error box). onDone's signature changed from () => void
+    to (job) => Promise<void> so the panel can genuinely await the refresh.
+  - Hit and fixed 2 react-hooks/set-state-in-effect lint errors using this
+    codebase's existing queueMicrotask(() => setState(...)) pattern.
+  - Live Playwright (real backend + live Snowflake account, ad hoc script,
+    deleted after), a genuine ~4.6-minute tick: confirmed the 3 intro
+    checkmarks accumulate one at a time on the real ~650ms cadence (0 right
+    after click, 1 at ~700ms, 2 at ~1400ms) rather than all at once, and
+    confirmed the success screen only appears after the real per-asset
+    list -> "Saving..." -> "Refreshing dashboard insights..." sequence --
+    with 2 real changed-flash map markers already present the moment the
+    success screen appeared, confirming the panel and feat-058's map
+    highlight are now genuinely synchronized rather than racing each other.
+    tsc/lint/build clean; backend pytest suite (161/161) unaffected (no
+    backend change). feature_list.json's feat-059 status: passing.
 - **Session 037 (2026-08-04): completed the actual Render + Vercel go-live
   Session 036 prepped but didn't execute, found and fixed 2 real deploy-only
   bugs, and shipped feat-057 (live per-asset progress panel) in response to
