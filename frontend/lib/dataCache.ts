@@ -82,3 +82,33 @@ export function refresh(key: string) {
   const fetcher = fetchers.get(key)
   if (fetcher) void run(key, fetcher)
 }
+
+/**
+ * Same as invalidate(), but awaits the refetch and returns the freshly-fetched
+ * value -- for callers that need to diff a "before" snapshot (taken via
+ * getSnapshot() before calling this) against the real "after" value, rather
+ * than just letting subscribers pick up the change passively.
+ */
+export async function invalidateAndWait<T>(key: string): Promise<T | undefined> {
+  const fetcher = fetchers.get(key) as Fetcher<T> | undefined
+  const prev = store.get(key)
+  store.set(key, { data: prev?.data, ts: 0 })
+  if (!fetcher) {
+    store.delete(key)
+    emit(key)
+    return undefined
+  }
+  await run(key, fetcher)
+  return (store.get(key) as Entry<T> | undefined)?.data
+}
+
+/**
+ * Writes an arbitrary value under a cache key with no fetcher (e.g. a
+ * derived/computed value like a tick diff, not something fetched from the
+ * API) and notifies subscribers -- same subscribe()/getSnapshot() contract
+ * as fetched keys, just written directly instead of via run().
+ */
+export function setValue<T>(key: string, data: T) {
+  store.set(key, { data, ts: Date.now() })
+  emit(key)
+}

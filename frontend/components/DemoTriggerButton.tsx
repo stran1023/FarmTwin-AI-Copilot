@@ -4,7 +4,9 @@ import { useState } from "react"
 import { PlayCircle, Loader2 } from "lucide-react"
 import { ApiError, unlockDemo, startWorkflow } from "@/lib/api"
 import { getDemoToken, setDemoToken, clearDemoToken } from "@/lib/demoAuth"
-import { invalidate } from "@/lib/dataCache"
+import { getSnapshot, invalidateAndWait, setValue } from "@/lib/dataCache"
+import { computeTickDiff, TICK_DIFF_HIGHLIGHT_MS, TICK_DIFF_KEY } from "@/lib/tickDiff"
+import type { Asset, DashboardSummary, WorkflowJobStatus } from "@/lib/types"
 import { PasscodePrompt } from "./PasscodePrompt"
 import { WorkflowProgressPanel } from "./WorkflowProgressPanel"
 
@@ -67,12 +69,32 @@ export function DemoTriggerButton() {
     }
   }
 
-  function handleJobDone() {
+  async function handleJobDone(job: WorkflowJobStatus) {
     // Fires on both "complete" and "error" -- even a failed job may have
     // written real Snowflake rows for whichever assets it got through
     // before failing, so the dashboard/map should refresh either way.
-    invalidate("assets")
-    invalidate("dashboard-summary")
+    // Snapshot the real pre-tick values before kicking off the refetch, so
+    // they can be diffed against the real post-tick values below -- this is
+    // what lets the map/dashboard highlight exactly what changed instead of
+    // silently swapping to the new data.
+    const beforeAssets = getSnapshot<Asset[]>("assets")?.data
+    const beforeSummary = getSnapshot<DashboardSummary>("dashboard-summary")?.data
+
+    const [afterAssets, afterSummary] = await Promise.all([
+      invalidateAndWait<Asset[]>("assets"),
+      invalidateAndWait<DashboardSummary>("dashboard-summary"),
+    ])
+
+    // Real assets the job itself generated fresh recommendations for this
+    // tick -- see tickDiff.ts for why this matters alongside the raw
+    // before/after asset compare.
+    const recommendedAssetIds = job.assets.filter((a) => a.recommendations_count > 0).map((a) => a.asset_id)
+
+    const diff = computeTickDiff(beforeAssets, afterAssets, beforeSummary, afterSummary, recommendedAssetIds)
+    if (diff) {
+      setValue(TICK_DIFF_KEY, diff)
+      window.setTimeout(() => setValue(TICK_DIFF_KEY, null), TICK_DIFF_HIGHLIGHT_MS)
+    }
   }
 
   return (

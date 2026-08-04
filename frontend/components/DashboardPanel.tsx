@@ -1,9 +1,10 @@
 "use client"
 
-import { CheckCircle2, CloudRain, Droplets, ListChecks, Thermometer, Wind } from "lucide-react"
+import { CheckCircle2, CloudRain, Droplets, ListChecks, Thermometer, TrendingDown, TrendingUp, Wind } from "lucide-react"
 import type { DashboardSummary } from "@/lib/types"
 import { getDashboardSummary } from "@/lib/api"
 import { useApiData } from "@/lib/useApiData"
+import { useTickDiff } from "@/lib/useTickDiff"
 import { Card, CardHeader } from "./Card"
 import { HealthGauge } from "./HealthGauge"
 
@@ -15,12 +16,14 @@ export function DashboardPanel({
   onHoverAsset?: (id: string | null) => void
 }) {
   const { data, loading } = useApiData<DashboardSummary>("dashboard-summary", getDashboardSummary)
+  const tickDiff = useTickDiff()
 
   if (loading || !data) {
     return <PanelSkeleton />
   }
 
   const { farm_health_score, weather, tasks_today } = data
+  const healthDelta = tickDiff?.healthDelta ?? null
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -33,8 +36,28 @@ export function DashboardPanel({
 
       {/* Health + weather */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="flex items-center p-4">
+        <Card
+          className="relative flex items-center p-4"
+          style={healthDelta ? { animation: "value-flash 1.4s ease-out" } : undefined}
+        >
           <HealthGauge score={farm_health_score} />
+          {/* Real before/after delta from the most recent Run Farm Tick (feat-058) --
+              distinct from HealthGauge's own session-scoped "Improving/Declining"
+              trend arrow, which stays untouched. */}
+          {healthDelta !== null && healthDelta !== 0 && (
+            <span
+              className={`absolute right-3 top-3 flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${
+                healthDelta > 0 ? "bg-healthy/15 text-healthy" : "bg-critical/15 text-critical"
+              }`}
+            >
+              {healthDelta > 0 ? (
+                <TrendingUp className="size-3.5" aria-hidden="true" />
+              ) : (
+                <TrendingDown className="size-3.5" aria-hidden="true" />
+              )}
+              {healthDelta > 0 ? `+${healthDelta}` : healthDelta}
+            </span>
+          )}
         </Card>
         <Card className="p-4">
           <div className="flex items-start justify-between">

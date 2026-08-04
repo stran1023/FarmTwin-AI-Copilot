@@ -4,10 +4,12 @@ import { cn } from "@/lib/utils"
 export function Card({
   children,
   className,
+  style,
   as: Tag = "div",
 }: {
   children: ReactNode
   className?: string
+  style?: React.CSSProperties
   as?: "div" | "section" | "article"
 }) {
   return (
@@ -16,6 +18,7 @@ export function Card({
         "rounded-2xl border border-border bg-card text-card-foreground shadow-sm",
         className,
       )}
+      style={style}
     >
       {children}
     </Tag>

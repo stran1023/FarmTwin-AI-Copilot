@@ -5,6 +5,7 @@ import { Maximize2, Minus, Plus } from "lucide-react"
 import type { Asset, AssetStatus, AssetType } from "@/lib/types"
 import { getAssets } from "@/lib/api"
 import { useApiData } from "@/lib/useApiData"
+import { useTickDiff } from "@/lib/useTickDiff"
 import { WORLD_H, WORLD_W, isoToXY } from "@/lib/iso"
 import { FarmTerrain } from "./FarmTerrain"
 import { MarkerFrame } from "./MarkerFrame"
@@ -163,6 +164,8 @@ export function DigitalTwinMap({
   const { data: assets, loading } = useApiData<Asset[]>("assets", getAssets)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const spotlightId = topPriorityAssetId(assets ?? [])
+  const tickDiff = useTickDiff()
+  const changedAssetIds = new Set(tickDiff?.changedAssetIds ?? [])
   const statusCounts = STATUS_META.map((meta) => ({
     ...meta,
     count: (assets ?? []).filter((a) => a.status === meta.status).length,
@@ -235,6 +238,7 @@ export function DigitalTwinMap({
                 selected={selectedAssetId === asset.id}
                 spotlight={spotlightId === asset.id}
                 highlighted={highlightedAssetId === asset.id || hoveredId === asset.id}
+                changed={changedAssetIds.has(asset.id)}
                 onSelect={() => onSelectAsset(asset.id)}
                 onHover={(h) => setHoveredId(h ? asset.id : null)}
               >

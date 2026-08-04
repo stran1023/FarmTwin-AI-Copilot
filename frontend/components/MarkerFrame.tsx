@@ -24,6 +24,8 @@ interface MarkerFrameProps {
   selected: boolean
   spotlight: boolean
   highlighted: boolean
+  /** This asset's status/health actually changed on the most recent Run Farm Tick (feat-058). */
+  changed?: boolean
   onSelect: () => void
   onHover: (hovering: boolean) => void
   children: ReactNode
@@ -34,6 +36,7 @@ export function MarkerFrame({
   selected,
   spotlight,
   highlighted,
+  changed = false,
   onSelect,
   onHover,
   children,
@@ -58,6 +61,16 @@ export function MarkerFrame({
           <span
             className="pointer-events-none absolute left-1/2 top-1/2 size-[5.5rem] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-[3px]"
             style={{ borderColor: ring, animation: "highlight-ring 1s ease-in-out infinite" }}
+            aria-hidden="true"
+          />
+        )}
+        {/* "Just updated by the last Run Farm Tick" glow (feat-058) — fixed
+            amber, independent of this asset's own status color, so it reads
+            as "this one changed" rather than blending into the status ring. */}
+        {changed && (
+          <span
+            className="pointer-events-none absolute left-1/2 top-1/2 -z-10 size-28 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ background: "var(--warning)", animation: "changed-flash 1.4s ease-out infinite" }}
             aria-hidden="true"
           />
         )}

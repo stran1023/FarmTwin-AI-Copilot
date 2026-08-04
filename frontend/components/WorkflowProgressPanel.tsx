@@ -21,7 +21,7 @@ export function WorkflowProgressPanel({
   onClose,
 }: {
   jobId: string
-  onDone: () => void
+  onDone: (job: WorkflowJobStatus) => void
   onClose: () => void
 }) {
   const [job, setJob] = useState<WorkflowJobStatus | null>(null)
@@ -46,7 +46,7 @@ export function WorkflowProgressPanel({
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS)
         } else if (!doneFiredRef.current) {
           doneFiredRef.current = true
-          onDone()
+          onDone(status)
         }
       } catch {
         // Transient poll failure -- retry on the same cadence rather than going quiet forever.

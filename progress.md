@@ -2,7 +2,64 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-08-04
+- Last Updated: 2026-08-05
+- **Session 038 (2026-08-05): implemented and live-verified feat-058
+  (before/after value-diff highlight for Run Farm Tick), following a
+  demo-flow review.** User described a hackathon demo flow (dashboard opens
+  on old data, Run Farm Tick simulates a new cycle, before/after should be
+  visually obvious) and asked whether it was feasible. Reviewed the actual
+  code first rather than assuming: found the "old data" step already true
+  (dashboard is a live view over Snowflake) with scripts/reset_demo_state.py
+  already covering a deterministic "before" state, and feat-057's progress
+  panel already covering the "processing" animation -- the one real gap was
+  no before/after diffing anywhere, and no charts exist in the frontend at
+  all (out of scope, no reading-history endpoint either). User agreed with
+  scoping to just the diff/highlight, added as feat-058, then asked to start
+  it in the same turn.
+  - Added lib/tickDiff.ts (computeTickDiff), lib/useTickDiff.ts, and
+    dataCache.ts's invalidateAndWait<T>()/setValue<T>() (the latter for
+    keys with no fetcher, e.g. a derived diff value). DemoTriggerButton's
+    handleJobDone is now async: snapshots "assets"/"dashboard-summary" via
+    getSnapshot before the tick's refetch, invalidateAndWait's both, diffs,
+    and publishes under a "tick-diff" cache key that auto-clears after 6s.
+  - Marker treatment: MarkerFrame.tsx gained a `changed` prop rendering a
+    fixed-amber changed-flash halo (new keyframe in globals.css), distinct
+    from the existing status-colored spotlight-pulse and hover-driven
+    highlight-ring. DashboardPanel's health-score Card gained a real +/-
+    delta chip plus a brief value-flash background (Card.tsx needed a new
+    `style` prop to support it) -- left HealthGauge's own feat-037
+    session-scoped trend arrow untouched.
+  - **Real mid-session design correction, not assumption-driven:** the
+    first version diffed only Asset.status/health_score before vs. after.
+    A real local tick against the live Snowflake account showed FP-001
+    sitting at critical/health_score=10 across two consecutive ticks (the
+    demo's crisis narrative is deliberately steady) while still generating
+    3 brand-new real recommendations each time -- the status/health-only
+    diff would have shown zero highlight for an asset the tick had clearly
+    just acted on. Fixed by unioning in real asset ids the finished job
+    reported a nonzero recommendations_count for (already computed by the
+    same job, from feat-057's WorkflowAssetProgress), which required
+    threading the resolved WorkflowJobStatus through
+    WorkflowProgressPanel's onDone callback instead of calling it with no
+    arguments.
+  - Live Playwright verification (real local backend + live Snowflake
+    account, ad hoc script, deleted after): ran a real ~4.4-minute tick (3
+    sequential live Cortex Agent calls). Real before/after via GET /assets:
+    CC-001 healthy(90)->critical(35) [status changed], FP-001
+    critical(10)->critical(10) [unchanged bucket, 3 new recs], GH-001
+    needs_attention(60)->needs_attention(60) [unchanged bucket, 4 new
+    recs]. Result: exactly 3 changed-flash markers rendered (CC-001,
+    FP-001, GH-001), confirming the recommendedAssetIds fix was both
+    necessary and correct -- 2 of the 3 real highlighted assets would have
+    been missed by a status/health-only diff. npx tsc --noEmit, npm run
+    lint, npm run build all clean throughout. Full details and exact
+    real numbers in feature_list.json's feat-058 evidence.
+  - Not independently re-verified live: the 6s auto-clear timer (same
+    window.setTimeout(setValue, ms) pattern already proven live elsewhere
+    in this codebase) -- judged not worth a 4th multi-minute live Cortex
+    Agent run just to watch a timer fire.
+  - Killed local uvicorn + next dev cleanly after verification; both ports
+    confirmed clear. feature_list.json's feat-058 status: passing.
 - **Session 037 (2026-08-04): completed the actual Render + Vercel go-live
   Session 036 prepped but didn't execute, found and fixed 2 real deploy-only
   bugs, and shipped feat-057 (live per-asset progress panel) in response to
