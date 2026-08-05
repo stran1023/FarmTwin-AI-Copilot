@@ -3,6 +3,38 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-05
+- **Session 038 continued once more (2026-08-05): implemented and
+  live-verified feat-062 -- a real percentage progress bar, expanded
+  intro/outro status lines, and a renamed CTA.** User asked for more
+  visible loading animation (a percent bar, more status words) and a more
+  meaningful button name than "Run Farm Tick." Offered 3 button-name
+  options via AskUserQuestion; user picked "Run AI Farm Analysis."
+  - Progress bar is real, not a fake timer: each phase (intro/live/outro/
+    refreshing/done) owns a fixed slice of 0-100, and within "live" the
+    fill also reflects the real average completion fraction across every
+    real asset's actual step (queued/observing/assessing/consulting_agent/
+    done), not just "we're in this phase." The unavoidably-unknown-duration
+    "refreshing" step (two real cache refetches) creeps toward its ceiling
+    via a 250ms interval instead of sitting frozen.
+  - Intro grew from 3 to 4 lines; outro grew from 1 line to 2 -- extracted
+    a shared SequentialLines component instead of duplicating the
+    checkmark/spinner/pending rendering.
+  - Renamed the button and panel header text throughout.
+  - Live Playwright (real backend + live Snowflake account), from the
+    clean healthy baseline: confirmed the new button text and the old
+    text gone; captured a real ~1.7-minute tick with progress values
+    4% -> 11% -> 75% (exactly the live-phase ceiling, right as the real
+    job stopped running) -> 88% (during the real refresh step) -- all
+    strictly increasing, bar confirmed absent once the success banner
+    appeared. That tick's real outcome (Tilapia Pond drifting into
+    needs_attention) was a different real escalation path than feat-060/
+    061's Chicken Coop runs -- further confirmation the simulation isn't
+    scripted. Re-ran the reset script afterward to leave the clean
+    healthy baseline in place. tsc/lint/build clean; backend pytest suite
+    (161/161) unaffected (frontend-only). Killed local uvicorn + next dev
+    cleanly; both ports confirmed clear.
+    feature_list.json's feat-062 status: passing. Charts remains the one
+    fully open item from the original demo-flow review, not started.
 - **Session 038 continued again (2026-08-05): implemented and live-verified
   feat-061 -- critical-outcome variant of the Run Farm Tick success
   banner.** Two open follow-ups were left after feat-060 (charts, and a

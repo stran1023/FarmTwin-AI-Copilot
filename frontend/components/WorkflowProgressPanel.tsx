@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Bot, Check, CircleDashed, Loader2, PartyPopper, Search, Sparkles, TriangleAlert } from "lucide-react"
 import { getWorkflowStatus } from "@/lib/api"
 import { useTickDiff } from "@/lib/useTickDiff"
-import type { WorkflowAssetProgress, WorkflowJobStatus } from "@/lib/types"
+import type { WorkflowAssetProgress, WorkflowJobStatus, WorkflowStep } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const POLL_INTERVAL_MS = 2000
@@ -19,18 +19,55 @@ const POLL_INTERVAL_MS = 2000
 // Agents REST API directly.
 const INTRO_LINES = [
   "Loading the latest farm state…",
-  "Collecting sensor & environmental data…",
+  "Reading sensor & environmental data…",
+  "Analyzing current conditions…",
   "Connecting to the Cortex Agent…",
 ]
-const INTRO_STEP_MS = 650
+const INTRO_STEP_MS = 550
 
 // Also decorative -- the real Snowflake writes already happened during the
-// per-asset loop above. This is a one-beat "wrapping up" transition before
-// the one part of this phase that IS real: awaiting onDone(job) below.
-const OUTRO_LINE = "Saving the new farm state…"
-const OUTRO_STEP_MS = 600
+// per-asset loop above. This is a couple of "wrapping up" beats before the
+// one part of this phase that IS real: awaiting onDone(job) below.
+const OUTRO_LINES = ["Saving the new farm state…", "Preparing your farm summary…"]
+const OUTRO_STEP_MS = 550
 
 type Phase = "intro" | "live" | "outro" | "refreshing" | "done"
+
+// Real progress bar, not a fake timer -- each phase owns a fixed slice of
+// the 0-100 range, and within "live" the fill also reflects each real
+// asset's actual step (see STEP_FRACTION below), not just phase membership.
+const PHASE_BOUNDS: Record<Phase, [number, number]> = {
+  intro: [0, 15],
+  live: [15, 75],
+  outro: [75, 85],
+  refreshing: [85, 99],
+  done: [100, 100],
+}
+
+const STEP_FRACTION: Record<WorkflowStep, number> = {
+  queued: 0,
+  observing: 0.25,
+  assessing: 0.5,
+  consulting_agent: 0.75,
+  done: 1,
+}
+
+function computeProgress(phase: Phase, introIndex: number, outroIndex: number, job: WorkflowJobStatus | null, refreshTicks: number): number {
+  const [lo, hi] = PHASE_BOUNDS[phase]
+  if (phase === "intro") return Math.round(lo + (introIndex / INTRO_LINES.length) * (hi - lo))
+  if (phase === "outro") return Math.round(lo + (outroIndex / OUTRO_LINES.length) * (hi - lo))
+  if (phase === "live") {
+    if (!job || job.assets.length === 0) return lo
+    const avgFraction = job.assets.reduce((sum, a) => sum + STEP_FRACTION[a.step], 0) / job.assets.length
+    return Math.round(lo + avgFraction * (hi - lo))
+  }
+  if (phase === "refreshing") {
+    // Duration is real but unknown ahead of time (two real cache refetches) --
+    // creeps toward the phase ceiling rather than sitting frozen while it waits.
+    return Math.min(hi, lo + refreshTicks * 3)
+  }
+  return 100
+}
 
 /**
  * Live view into one real POST /workflow/run/start job -- polls
@@ -54,6 +91,8 @@ export function WorkflowProgressPanel({
   const [job, setJob] = useState<WorkflowJobStatus | null>(null)
   const [phase, setPhase] = useState<Phase>("intro")
   const [introIndex, setIntroIndex] = useState(0)
+  const [outroIndex, setOutroIndex] = useState(0)
+  const [refreshTicks, setRefreshTicks] = useState(0)
   const refreshFiredRef = useRef(false)
   const tickDiff = useTickDiff()
 
@@ -88,7 +127,7 @@ export function WorkflowProgressPanel({
 
   // Intro choreography: ticks forward on a fixed cadence regardless of real
   // poll speed (it's a front-of-house flourish over work already in flight),
-  // then hands off to "live" once all 3 lines have shown their checkmark.
+  // then hands off to "live" once every line has shown its checkmark.
   useEffect(() => {
     if (phase !== "intro") return
     if (introIndex >= INTRO_LINES.length) {
@@ -112,24 +151,38 @@ export function WorkflowProgressPanel({
     }
   }, [phase, job])
 
+  // Outro choreography: same "one line at a time" pattern as the intro.
   useEffect(() => {
-    if (phase !== "outro" || !job) return
-    const t = window.setTimeout(() => setPhase("refreshing"), OUTRO_STEP_MS)
+    if (phase !== "outro") return
+    if (outroIndex >= OUTRO_LINES.length) {
+      queueMicrotask(() => setPhase("refreshing"))
+      return
+    }
+    const t = window.setTimeout(() => setOutroIndex((i) => i + 1), OUTRO_STEP_MS)
     return () => window.clearTimeout(t)
-  }, [phase, job])
+  }, [phase, outroIndex])
 
   // The one part of this whole sequence that's genuinely real, not
   // decorative: awaits the same onDone(job) feat-058 uses to snapshot,
   // refetch, and diff the real "assets"/"dashboard-summary" cache keys, so
   // "Refreshing dashboard insights..." is on screen for exactly as long as
-  // that real work takes -- not a fixed fake delay.
+  // that real work takes -- not a fixed fake delay. The tick counter below
+  // only drives the progress bar's creep while this real work is in flight;
+  // it never decides when the phase actually ends.
   useEffect(() => {
     if (phase !== "refreshing" || !job || refreshFiredRef.current) return
     refreshFiredRef.current = true
     void onDone(job).finally(() => setPhase("done"))
   }, [phase, job, onDone])
 
+  useEffect(() => {
+    if (phase !== "refreshing") return
+    const t = window.setInterval(() => setRefreshTicks((n) => n + 1), 250)
+    return () => window.clearInterval(t)
+  }, [phase])
+
   const canClose = job !== null && phase === "done"
+  const progress = computeProgress(phase, introIndex, outroIndex, job, refreshTicks)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -146,7 +199,7 @@ export function WorkflowProgressPanel({
               )}
               <span className="relative inline-flex size-2 rounded-full bg-primary" aria-hidden="true" />
             </span>
-            {phase === "done" ? "Farm tick" : "Running farm tick"}
+            {phase === "done" ? "AI Farm Analysis" : "Running AI Farm Analysis"}
           </h2>
           {canClose && (
             <button
@@ -158,6 +211,27 @@ export function WorkflowProgressPanel({
             </button>
           )}
         </div>
+
+        {phase !== "done" && (
+          <div className="mb-3">
+            <div
+              className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"
+              role="progressbar"
+              aria-valuenow={progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Farm analysis progress"
+            >
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-1 text-right text-[10px] font-semibold tabular-nums text-muted-foreground">
+              {progress}%
+            </p>
+          </div>
+        )}
 
         {(phase === "intro" || phase === "live" || phase === "outro" || phase === "refreshing") && (
           <IntroLines introIndex={phase === "intro" ? introIndex : INTRO_LINES.length} />
@@ -172,17 +246,15 @@ export function WorkflowProgressPanel({
         )}
 
         {(phase === "outro" || phase === "refreshing") && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-            {phase === "outro" ? (
-              <>
-                <Check className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
-                {OUTRO_LINE}
-              </>
-            ) : (
-              <>
-                <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+          <div className="mt-2 rounded-lg border border-border bg-secondary/40 px-3 py-2">
+            <ul className="flex flex-col gap-1.5" aria-label="Wrap-up steps">
+              <SequentialLines lines={OUTRO_LINES} index={phase === "outro" ? outroIndex : OUTRO_LINES.length} />
+            </ul>
+            {phase === "refreshing" && (
+              <p className="mt-1.5 flex items-center gap-2 text-xs text-foreground">
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
                 Refreshing dashboard insights…
-              </>
+              </p>
             )}
           </div>
         )}
@@ -204,9 +276,17 @@ export function WorkflowProgressPanel({
 
 function IntroLines({ introIndex }: { introIndex: number }) {
   return (
-    <ul className="flex flex-col gap-1.5" aria-label="Farm tick processing steps">
-      {INTRO_LINES.map((line, idx) => {
-        const state = idx < introIndex ? "done" : idx === introIndex ? "active" : "pending"
+    <ul className="flex flex-col gap-1.5" aria-label="Farm analysis processing steps">
+      <SequentialLines lines={INTRO_LINES} index={introIndex} />
+    </ul>
+  )
+}
+
+function SequentialLines({ lines, index }: { lines: string[]; index: number }) {
+  return (
+    <>
+      {lines.map((line, idx) => {
+        const state = idx < index ? "done" : idx === index ? "active" : "pending"
         return (
           <li
             key={line}
@@ -230,7 +310,7 @@ function IntroLines({ introIndex }: { introIndex: number }) {
           </li>
         )
       })}
-    </ul>
+    </>
   )
 }
 

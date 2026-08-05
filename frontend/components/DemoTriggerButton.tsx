@@ -103,7 +103,7 @@ export function DemoTriggerButton() {
         type="button"
         onClick={handleClick}
         disabled={starting || activeJobId !== null}
-        title="Run a farm simulation tick — advances sensor readings, risk assessment, and AI recommendations"
+        title="Run a real AI-powered farm analysis — advances sensor readings, risk assessment, and Cortex Agent recommendations"
         className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
       >
         {starting ? (
@@ -111,7 +111,7 @@ export function DemoTriggerButton() {
         ) : (
           <PlayCircle className="h-4 w-4" aria-hidden="true" />
         )}
-        <span className="hidden sm:inline">Run Farm Tick</span>
+        <span className="hidden sm:inline">Run AI Farm Analysis</span>
       </button>
 
       {showPasscode && (

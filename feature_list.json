@@ -778,6 +778,30 @@
         "Backend pytest suite (161/161) and compileall unaffected via ./init.sh -- this feature touched frontend only."
       ],
       "notes": "User picked this over charts via AskUserQuestion, citing it as the smaller, self-contained option (real diff data already available, no new backend endpoint needed) versus charts' bigger lift (new reading-history endpoint + a chart component built from scratch, still not attempted anywhere in this codebase)."
+    },
+    {
+      "id": "feat-062",
+      "priority": 55,
+      "area": "frontend",
+      "name": "Real percentage progress bar, expanded intro/outro lines, and a renamed CTA for the AI farm analysis panel",
+      "description": "User asked for more visible animation on the processing panel (a percent-based loading bar, more status words during loading) and a more meaningful name for the 'Run Farm Tick' button. Picked 'Run AI Farm Analysis' from 3 options via AskUserQuestion. Added a real (not fake-timer) percentage progress bar to WorkflowProgressPanel.tsx: PHASE_BOUNDS gives each phase (intro/live/outro/refreshing/done) a fixed slice of 0-100, and within the always-real 'live' phase the fill also reflects the real average completion fraction across job.assets' actual steps (STEP_FRACTION: queued=0, observing=0.25, assessing=0.5, consulting_agent=0.75, done=1) -- not just 'we're in this phase now'. The 'refreshing' phase (duration real but not knowable ahead of time -- two real cache refetches) creeps toward its ceiling via a 250ms interval rather than sitting frozen. Expanded INTRO_LINES from 3 to 4 ('Loading the latest farm state...', 'Reading sensor & environmental data...', 'Analyzing current conditions...', 'Connecting to the Cortex Agent...') and OUTRO_LINE (1) into OUTRO_LINES (2: 'Saving the new farm state...', 'Preparing your farm summary...'), both still decorative-but-grounded per feat-059's established rule (no fabricated architecture claims). Extracted the intro's per-line checkmark/spinner/pending rendering into a shared SequentialLines component reused by both intro and outro instead of duplicating it. Renamed the button (DemoTriggerButton.tsx) and the panel's header text from 'Run Farm Tick'/'Running farm tick' to 'Run AI Farm Analysis'/'Running AI Farm Analysis'.",
+      "user_visible_behavior": "The button now reads 'Run AI Farm Analysis'. Clicking it shows a real percentage progress bar (e.g. 4% -> 11% -> ...) that advances smoothly through 4 intro lines, the real per-asset list, 2 outro lines, and a real 'Refreshing dashboard insights...' step, then disappears once the success/critical screen appears.",
+      "dependencies": [
+        "feat-057",
+        "feat-059"
+      ],
+      "status": "passing",
+      "verification": [
+        "cd frontend && npx tsc --noEmit && npm run lint && npm run build all succeed",
+        "Live Playwright against the real backend + live Snowflake account: confirm the button reads 'Run AI Farm Analysis' (and the old 'Run Farm Tick' text is gone), confirm the progress bar's aria-valuenow strictly increases across intro -> live -> outro -> refreshing, confirm it disappears once the done-phase success/critical banner appears, confirm all 4 intro lines and both outro lines render and tick off sequentially"
+      ],
+      "evidence": [
+        "npx tsc --noEmit, npm run lint, npm run build: all clean after adding PHASE_BOUNDS/STEP_FRACTION/computeProgress, the progressbar markup, expanding INTRO_LINES/OUTRO_LINES, extracting SequentialLines, and renaming the button/header text.",
+        "Live Playwright (real local backend + live Snowflake account, ad hoc script, deleted after -- same precedent as this session's other evidence trails), from the feat-060/061 clean healthy baseline: confirmed 'Run AI Farm Analysis' button present and 'Run Farm Tick' text gone (0 matches). Clicked it and captured a real ~1.7-minute tick. Progress values captured live: 4% right after click -> 11% ~1.8s later (intro/early-live) -> 75% at the real outro's start (exactly the live-phase ceiling, confirming the live-phase fill genuinely reaches its bound only once the real job stops running) -> 88% during the real 'Refreshing dashboard insights...' step (creeping past the 85% outro ceiling as designed). All values strictly non-decreasing as asserted. Progress bar confirmed absent (0 elements) once the done-phase banner appeared. Intro checkmark count went 0 -> 1 within ~600ms, confirming sequential (not simultaneous) reveal across the new 4-line set.",
+        "Real tick outcome that run: Tilapia Pond A drifted into real 'needs_attention' risk (a different real escalation path than feat-060/061's Chicken Coop runs, itself further evidence the underlying real simulation is not scripted). Re-ran scripts/reset_demo_state.py afterward to restore the clean healthy baseline as the state left behind; re-verified via GET /dashboard/summary (farm_health_score=90, active_alerts=0, all 5 healthy). Killed local uvicorn + next dev cleanly; both ports confirmed clear. Deleted the ad hoc spec file.",
+        "Backend pytest suite (161/161) and compileall unaffected via ./init.sh -- this feature touched frontend only."
+      ],
+      "notes": "Button label chosen from 3 options via AskUserQuestion ('Run AI Farm Analysis' vs. 'Analyze Farm Now' vs. 'Run Daily Farm Check')."
     }
   ],
   "completed_note": "2026-07-15: feat-008 through feat-029 (22 features -- the full FarmTwin pivot, the performance/split-screen-UX batch, and the visual-overhaul batch) all reached 'passing' with real runtime evidence and were removed from this active list at the user's explicit request, since they are done and were cluttering the list of upcoming work. Nothing was deleted from the repository or lost: every one of those features' full evidence trail (implementation details, verification commands run, real output, screenshots referenced) remains in progress.md's session-by-session log (Sessions 011 through 019). This mirrors the same precedent set by the 2026-07-14 pivot_note below, which did the same thing for the original feat-001 through feat-007."
