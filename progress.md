@@ -3,6 +3,28 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-06
+- **Session 039, doc update (2026-08-06): refreshed docs/video-script.md,
+  no app/feature change.** User asked whether the video script still fit
+  the actual product; it predated feat-057 through feat-064 and had drifted
+  in several concrete ways: referenced the old "Run Farm Tick" button label
+  (now "Run AI Farm Analysis"), opened on a crisis reading that no longer
+  matches the new healthy-baseline default (feat-060), suggested showing a
+  "backend log tail" for the processing step instead of the actual
+  camera-ready animated panel now built (feat-057/059/062), never mentioned
+  the before/after map-highlight + critical-outcome banner (feat-058/059/
+  061) despite that now being the strongest visual moment in the app, and
+  its recording checklist directly contradicted the new demo design ("pick
+  a moment where at least one asset is already non-healthy" -- opposite of
+  the new healthy-baseline-then-reveal narrative) plus told the presenter to
+  pre-warm via `/health`, which -- per this session's own pre-warming work --
+  is a no-op that never touches Snowflake and doesn't actually warm the real
+  data path. Rewrote the hook, input, processing, and output beats to match
+  the actual current UI, and fixed the recording checklist: added a
+  `reset_demo_state.py` step, corrected the pre-warm target to a real
+  Snowflake-backed endpoint, and replaced the "pick a non-healthy moment"
+  guidance with the real one (start healthy, let a live tick reveal it,
+  click twice if the first one doesn't escalate). Not logged as a
+  feature_list.json entry -- documentation only, no app behavior changed.
 - **Session 039 (2026-08-06): implemented and live-verified feat-064 --
   fixed Copilot silently dead-ending behind the demo passcode gate on the
   deployed site.** User reported the deployed Copilot "losing the session"
