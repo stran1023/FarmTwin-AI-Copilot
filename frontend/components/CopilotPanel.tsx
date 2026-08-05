@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Sparkles, Send, User, Bot, Trash2 } from "lucide-react"
-import { askCopilot, type CopilotTurn } from "@/lib/api"
+import { ApiError, askCopilot, unlockDemo, type CopilotTurn } from "@/lib/api"
+import { setDemoToken, clearDemoToken } from "@/lib/demoAuth"
 import { cn } from "@/lib/utils"
 import { renderInlineMarkdown, splitIntoSentences } from "@/lib/markdown"
+import { PasscodePrompt } from "./PasscodePrompt"
 
 interface ChatMessage {
   id: string
@@ -52,9 +54,18 @@ export function CopilotPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([SEED_MESSAGE])
   const [input, setInput] = useState("")
   const [pending, setPending] = useState(false)
+  const [showPasscode, setShowPasscode] = useState(false)
+  const [passcodeError, setPasscodeError] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(0)
   const hydratedRef = useRef(false)
+  // The exact (question, history) this send/retry cycle is for -- set right
+  // before the first attempt, read again by submitPasscode() to retry the
+  // SAME question once unlocked, so a user who lands on /copilot first (no
+  // passcode entered yet, unlike the Farm view's "Run AI Farm Analysis"
+  // button) isn't left with a dead-end generic error and no way to actually
+  // get an answer.
+  const pendingAskRef = useRef<{ question: string; history: CopilotTurn[] } | null>(null)
 
   // Restore a persisted conversation client-side only, after the initial
   // mount -- always rendering the fresh seed on the very first pass (server
@@ -70,7 +81,17 @@ export function CopilotPanel() {
           // Deferred so setState doesn't run synchronously within the effect
           // body (react-hooks/set-state-in-effect) -- same pattern this
           // codebase already established in lib/useApiData.ts and HealthGauge.tsx.
-          queueMicrotask(() => setMessages(parsed))
+          // hydratedRef only flips inside this same microtask -- if it flipped
+          // synchronously above instead, the persist effect below (which runs
+          // right after this one, in the same commit) would see hydratedRef
+          // already true and write the still-un-restored `messages` (the
+          // fresh seed) back over the real persisted conversation before the
+          // restore even applies.
+          queueMicrotask(() => {
+            setMessages(parsed)
+            hydratedRef.current = true
+          })
+          return
         }
       }
     } catch {
@@ -110,6 +131,39 @@ export function CopilotPanel() {
     }
   }
 
+  // Real attempt at asking the agent. On a 401 (the public deployment's demo
+  // passcode gate -- see DemoTriggerButton for the same gate handled from
+  // the Farm view), remembers this exact question so it can be retried for
+  // real once unlocked, rather than showing a misleading generic error.
+  async function runAsk(question: string, history: CopilotTurn[]) {
+    setPending(true)
+    scrollToBottom()
+    try {
+      const { answer } = await askCopilot(question, history)
+      setMessages((prev) => [...prev, { id: nextId("a"), role: "assistant", text: answer }])
+      pendingAskRef.current = null
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearDemoToken()
+        pendingAskRef.current = { question, history }
+        setShowPasscode(true)
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId("e"),
+            role: "assistant",
+            isError: true,
+            text: "I couldn't reach the farm model just now. Try again in a moment.",
+          },
+        ])
+      }
+    } finally {
+      setPending(false)
+      scrollToBottom()
+    }
+  }
+
   async function send(question: string) {
     const q = question.trim()
     if (!q || pending) return
@@ -118,24 +172,23 @@ export function CopilotPanel() {
     const userMsg: ChatMessage = { id: nextId("u"), role: "user", text: q }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
+    await runAsk(q, history)
+  }
+
+  async function submitPasscode(passcode: string) {
     setPending(true)
-    scrollToBottom()
+    setPasscodeError(false)
     try {
-      const { answer } = await askCopilot(q, history)
-      setMessages((prev) => [...prev, { id: nextId("a"), role: "assistant", text: answer }])
+      const { token } = await unlockDemo(passcode)
+      setDemoToken(token)
+      setShowPasscode(false)
+      const retry = pendingAskRef.current
+      if (retry) {
+        await runAsk(retry.question, retry.history)
+      }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextId("e"),
-          role: "assistant",
-          isError: true,
-          text: "I couldn't reach the farm model just now. Try again in a moment.",
-        },
-      ])
-    } finally {
+      setPasscodeError(true)
       setPending(false)
-      scrollToBottom()
     }
   }
 
@@ -211,6 +264,22 @@ export function CopilotPanel() {
           </div>
         )}
       </div>
+
+      {showPasscode && (
+        <div className="border-t border-border bg-secondary/40 px-5 py-3">
+          <p className="mb-2 text-xs text-muted-foreground">
+            This demo requires a judge passcode to continue -- your question is saved and will be asked
+            for real once you unlock.
+          </p>
+          <PasscodePrompt
+            onSubmit={submitPasscode}
+            onCancel={() => setShowPasscode(false)}
+            busy={pending}
+            submitLabel="Unlock & ask"
+          />
+          {passcodeError && <p className="mt-1 text-xs text-destructive">Incorrect passcode</p>}
+        </div>
+      )}
 
       {messages.length <= 1 && (
         <div className="flex flex-wrap gap-2 px-5 pb-3">

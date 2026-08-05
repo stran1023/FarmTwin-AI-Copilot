@@ -2,7 +2,56 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-08-05
+- Last Updated: 2026-08-06
+- **Session 039 (2026-08-06): implemented and live-verified feat-064 --
+  fixed Copilot silently dead-ending behind the demo passcode gate on the
+  deployed site.** User reported the deployed Copilot "losing the session"
+  after sending a message, navigating away, and coming back. Investigated
+  rather than assuming feat-063's persistence was broken: pre-warmed the
+  real Render/Vercel deployment first (confirmed both live and fast --
+  backend 684ms via a real Snowflake-backed endpoint, not just /health);
+  then, on the actual bug report, curled the real deployed backend
+  directly and got a genuine 401 {"detail":"Demo access required"} from
+  POST /copilot/ask. Ruled out a stale Vercel deployment before looking
+  for a code bug (confirmed feat-063's own markers were already present in
+  the live compiled JS chunks). Real root cause: apiFetch attaches the demo
+  token to every request globally, so a user who unlocks via the Farm
+  view's "Run AI Farm Analysis" button first never notices this, but
+  CopilotPanel.tsx had zero awareness of the gate -- any judge landing on
+  /copilot first would see every question silently and permanently fail
+  with a generic, unexplained error, which reads exactly like "losing the
+  session."
+  - Fixed by mirroring DemoTriggerButton/PasscodePrompt's existing
+    pattern: catch ApiError(401) specifically, remember the exact pending
+    question via a ref, show an inline passcode prompt instead of a
+    dead-end error, and automatically retry the SAME original question for
+    real once unlocked.
+  - Deliberately did NOT add a proactive getDemoToken()-before-sending
+    check (unlike DemoTriggerButton) -- confirmed via require_demo_access's
+    real code that it's a true no-op with no DEMO_PASSCODE set locally, so
+    a proactive check would incorrectly force a passcode prompt in local
+    dev where none is ever actually needed.
+  - Also tightened a related (self-correcting but sloppy) timing bug found
+    while in this file: the sessionStorage-restore effect flipped
+    hydratedRef synchronously before the restored messages actually
+    applied via its queued microtask, letting the persist effect
+    momentarily overwrite the just-restored conversation with the stale
+    seed before a follow-up render corrected it. Now both flip together in
+    the same microtask.
+  - Live Playwright verification: since the real production passcode is
+    intentionally never available to this agent (Session 037's decision),
+    restarted the local backend with DEMO_PASSCODE=test1234 (a passcode
+    this agent chose) to fully exercise the real gate end to end. Confirmed
+    the passcode prompt now appears instead of the generic error, and the
+    real backend log trace confirmed the complete cycle: POST
+    /copilot/ask -> 401, POST /demo/unlock -> 200, POST /copilot/ask ->
+    200 (the same retried question, succeeding for real). The test
+    script's own final assertion was flawed (same button-disabled-state
+    mistake as an earlier session's test) and reported a false failure
+    after this point, but the real backend log is authoritative.
+  - tsc/lint/build clean; backend pytest suite (161/161) unaffected
+    (frontend-only fix). Killed local uvicorn + next dev cleanly; both
+    ports confirmed clear. feature_list.json's feat-064 status: passing.
 - **Session 038, small cleanup (2026-08-05): fixed a stale code comment,
   no feature/behavior change.** User asked for an honest hackathon-readiness
   assessment against docs/challenge.md's 3 judging criteria (Real-World
