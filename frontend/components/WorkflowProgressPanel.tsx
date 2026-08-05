@@ -245,6 +245,50 @@ function SuccessSummary({
 }) {
   const changedNames = assets.filter((a) => a.recommendations_count > 0).map((a) => a.name)
   const totalRecs = assets.reduce((sum, a) => sum + a.recommendations_count, 0)
+  // Real signal, not a guess: result.highRiskCount is the backend's own
+  // count of assets currently at medium+ risk after this tick (main.py's
+  // _run_workflow -- everything that isn't "low" gets appended to
+  // high_risk_assets). Whether or not *this* tick is what caused it, a
+  // farmer opening the dashboard right now has something to act on.
+  const isCritical = result.highRiskCount > 0
+  const needsAttention = assets
+    .filter((a) => a.risk_level !== null && a.risk_level !== "low")
+    .map((a) => a.name)
+
+  if (isCritical) {
+    return (
+      <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-critical/40 bg-critical/10 px-4 py-4 text-center">
+        <TriangleAlert
+          className="size-6 text-critical"
+          style={{ animation: "check-pop 400ms ease-out" }}
+          aria-hidden="true"
+        />
+        <p className="text-sm font-bold text-foreground">Critical Farm Changes Detected</p>
+        <dl className="grid w-full grid-cols-3 gap-2 text-xs">
+          <SummaryStat label="Assessed" value={result.assetsAssessed} />
+          <SummaryStat label="At risk" value={result.highRiskCount} />
+          <SummaryStat label="New recs" value={totalRecs} />
+        </dl>
+        {healthDelta !== null && healthDelta !== 0 && (
+          <p className={cn("text-xs font-semibold", healthDelta > 0 ? "text-healthy" : "text-critical")}>
+            Farm health {healthDelta > 0 ? `+${healthDelta}` : healthDelta} this tick
+          </p>
+        )}
+        {needsAttention.length > 0 && (
+          <p className="flex items-center gap-1 text-xs font-medium text-critical">
+            <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
+            Needs attention: {needsAttention.join(", ")}
+          </p>
+        )}
+        {changedNames.length > 0 && (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Sparkles className="size-3 shrink-0" aria-hidden="true" />
+            New recommendations for: {changedNames.join(", ")}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="mt-2 flex flex-col items-center gap-2 rounded-lg border border-healthy/40 bg-healthy/10 px-4 py-4 text-center">

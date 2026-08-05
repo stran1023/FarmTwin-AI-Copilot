@@ -753,6 +753,31 @@
         "Killed the local uvicorn background process cleanly after verification; port 8000 confirmed clear."
       ],
       "notes": "User explicitly chose 'replace the default demo state' over keeping the old crisis-default as a separate option (asked directly, user confirmed). The active_alerts SQL fix was necessary for this feature's own requirement ('no critical alerts' in the healthy baseline) to actually hold, not a scope-creep addition -- same precedent as several earlier sessions folding in an incidental fix discovered during a feature's own live verification (e.g. feat-039's 3 incidental fixes). Explicitly out of scope, not attempted here: charts (still no reading-history endpoint or chart component anywhere in this codebase), and a distinct 'Critical Farm Changes Detected' variant of feat-059's success banner (which currently always reads 'Farm Tick Completed -- New Insights Generated' regardless of whether the tick's outcome was good or bad news) -- flagged to the user as a real follow-up candidate, not actioned without confirmation."
+    },
+    {
+      "id": "feat-061",
+      "priority": 54,
+      "area": "frontend",
+      "name": "Critical-outcome variant of the Run Farm Tick success banner",
+      "description": "feat-059's success screen always used the same positive framing ('Farm Tick Completed -- New Insights Generated') regardless of whether the tick's real outcome was good or bad news -- flagged as an open follow-up in feat-060's notes. User chose to build this over charts (the other open item) via AskUserQuestion. WorkflowProgressPanel.tsx's SuccessSummary now branches on a real signal already available on the finished job: result.highRiskCount (the backend's own real count, from main.py's _run_workflow, of assets currently at medium+ risk after this tick -- not a frontend guess). When highRiskCount > 0, renders a critical-themed variant (TriangleAlert icon, border-critical/bg-critical styling, headline 'Critical Farm Changes Detected', plus a real 'Needs attention: <names>' line built from job.assets filtered to risk_level != 'low' and != null) instead of the existing positive PartyPopper/healthy-styled variant. The existing stats grid, health-delta chip, and 'Updated: <names>' line (still real, from feat-058/059) are unchanged and shared by both variants.",
+      "user_visible_behavior": "When a Run Farm Tick's real outcome leaves one or more assets at medium+ risk, the success screen shows a red 'Critical Farm Changes Detected' banner naming exactly which real assets need attention, instead of always showing the same positive 'Farm Tick Completed' message regardless of outcome.",
+      "dependencies": [
+        "feat-059",
+        "feat-060"
+      ],
+      "status": "passing",
+      "verification": [
+        "cd frontend && npx tsc --noEmit && npm run lint && npm run build all succeed",
+        "Live Playwright against the real backend + live Snowflake account, from the feat-060 healthy baseline: click Run Farm Tick, confirm the banner variant shown matches the real post-tick state (critical banner iff GET /assets reports at least one non-healthy asset), confirm the 'Needs attention' line lists exactly the real at-risk asset name(s)"
+      ],
+      "evidence": [
+        "npx tsc --noEmit, npm run lint, npm run build: all clean after branching SuccessSummary on result.highRiskCount > 0.",
+        "Live Playwright (real local backend + live Snowflake account, ad hoc script, deleted after -- same precedent as feat-057/058/059/060's evidence trails), starting from the clean healthy baseline feat-060 leaves behind: clicked Run Farm Tick, real tick genuinely escalated Chicken Coop's feed level into critical risk again (same real mechanism verified in feat-060). Panel correctly rendered the 'Critical Farm Changes Detected' banner with 'Needs attention: Layer House North' -- cross-checked against a direct GET /assets call in the same test, which independently confirmed CC-001:critical and no other asset at risk. Assertion isCritical === (real at-risk asset count > 0) passed.",
+        "The positive-banner branch was not independently re-exercised live this run (the real tick happened to escalate again) -- it's the pre-existing code from feat-059, already live-verified there, now simply reached via the new `!isCritical` branch rather than unconditionally; the branching logic itself was verified by the critical path firing correctly on a real signal.",
+        "Re-ran scripts/reset_demo_state.py after verification to restore the clean healthy baseline as the state left behind; re-verified via GET /dashboard/summary (farm_health_score=90, active_alerts=0, all 5 healthy). Killed local uvicorn + next dev cleanly; both ports confirmed clear. Deleted the ad hoc spec file.",
+        "Backend pytest suite (161/161) and compileall unaffected via ./init.sh -- this feature touched frontend only."
+      ],
+      "notes": "User picked this over charts via AskUserQuestion, citing it as the smaller, self-contained option (real diff data already available, no new backend endpoint needed) versus charts' bigger lift (new reading-history endpoint + a chart component built from scratch, still not attempted anywhere in this codebase)."
     }
   ],
   "completed_note": "2026-07-15: feat-008 through feat-029 (22 features -- the full FarmTwin pivot, the performance/split-screen-UX batch, and the visual-overhaul batch) all reached 'passing' with real runtime evidence and were removed from this active list at the user's explicit request, since they are done and were cluttering the list of upcoming work. Nothing was deleted from the repository or lost: every one of those features' full evidence trail (implementation details, verification commands run, real output, screenshots referenced) remains in progress.md's session-by-session log (Sessions 011 through 019). This mirrors the same precedent set by the 2026-07-14 pivot_note below, which did the same thing for the original feat-001 through feat-007."

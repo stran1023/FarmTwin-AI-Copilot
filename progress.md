@@ -3,6 +3,34 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-05
+- **Session 038 continued again (2026-08-05): implemented and live-verified
+  feat-061 -- critical-outcome variant of the Run Farm Tick success
+  banner.** Two open follow-ups were left after feat-060 (charts, and a
+  bad-news banner variant); asked the user via AskUserQuestion which to
+  build next, since they're very different scope (charts needs a new
+  backend endpoint + a chart component from scratch, nothing like either
+  exists yet). User picked the banner variant.
+  - WorkflowProgressPanel.tsx's SuccessSummary now branches on
+    result.highRiskCount > 0 (the backend's own real count of
+    currently-at-risk assets after the tick, from main.py's
+    _run_workflow) -- shows a red 'Critical Farm Changes Detected'
+    banner with a real 'Needs attention: <names>' line when true,
+    otherwise the existing positive banner from feat-059, unchanged.
+  - Live Playwright (real backend + live Snowflake account), starting
+    from feat-060's clean healthy baseline: a real tick escalated the
+    Chicken Coop into critical risk again (same real mechanism as
+    feat-060's verification), and the panel correctly showed 'Critical
+    Farm Changes Detected' / 'Needs attention: Layer House North' --
+    cross-checked in the same test against a direct GET /assets call,
+    which independently confirmed only CC-001 was at risk. Assertion
+    (banner variant) === (real at-risk count > 0) passed.
+  - Re-ran reset_demo_state.py afterward to restore the clean healthy
+    baseline as the state left behind; re-verified via GET
+    /dashboard/summary. Killed local uvicorn + next dev cleanly; both
+    ports confirmed clear. tsc/lint/build clean; backend pytest suite
+    (161/161) unaffected (frontend-only change).
+    feature_list.json's feat-061 status: passing. Charts remain the one
+    open item, not started.
 - **Session 038 continued (2026-08-05): implemented and live-verified
   feat-060 -- replaced the default demo reset state with a genuinely
   healthy baseline, tuned for a real single-tick escalation, per the
