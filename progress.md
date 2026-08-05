@@ -3,6 +3,50 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-05
+- **Session 038, yet another continuation (2026-08-05): implemented and
+  live-verified feat-063 -- real conversational memory + a Clear
+  conversation button for the Copilot chat.** User wanted Copilot to feel
+  more like ChatGPT (an ongoing conversation, not one-shot Q&A), then
+  raised a real concern themselves: carrying memory forward would drag
+  stale context into an unrelated new question. Offered "plain discard" vs.
+  "archive" (server-side, browsable past threads); user chose plain
+  discard, keeping this a contained frontend+prompt change, no new
+  Snowflake table.
+  - Backend: schemas.py gained CopilotTurn + CopilotQuestion.history (backward
+    compatible, defaults to []). cortex_agent_client.ask_agent() now accepts
+    real prior turns and sends them as genuine alternating user/assistant
+    messages in the Cortex Agents Run API's own multi-turn array -- verified
+    the real documented schema via WebFetch first rather than assuming.
+    main.py caps history server-side at the last 6 turns.
+  - Frontend: CopilotPanel.tsx persists messages to sessionStorage (survives
+    navigating away and back; fresh tab starts clean) using the same
+    "render the fresh seed first, restore client-side in an effect" pattern
+    this codebase already established to avoid SSR hydration mismatches. A
+    new Clear conversation button (trash icon) discards everything back to
+    the seed greeting.
+  - **Real bug found and fixed during live verification, not assumed:** the
+    very first live test's follow-up turn (carrying 1 real prior exchange)
+    hit a genuine httpx.ReadTimeout at the existing 150s client timeout --
+    confirmed via the backend's actual traceback that this was a real
+    latency issue (conversation history genuinely makes the agent's own
+    reasoning take longer), not a payload-shape bug, and well within
+    Snowflake's own documented 15-minute allowance for this endpoint. Fixed
+    by raising the httpx client timeout from 150s to 240s.
+  - Live Playwright re-run after the fix (real backend + live Snowflake
+    account): turn 1's real request carried history: []; turn 2's carried
+    exactly 1 real prior turn with real content matching what the agent had
+    actually said. Conversation survived navigating away to / and back.
+    Clear conversation button confirmed to wipe all trace of the real prior
+    answer, leaving just the seed + suggestion chips (the one test
+    assertion that "failed" was a false alarm in the test itself -- it
+    didn't account for one of the always-shown suggestion chips sharing
+    exact wording with the test's chosen question).
+  - Confirmed via GET /dashboard/summary that none of this touched real
+    farm data (Copilot is read-only) -- still the clean healthy baseline
+    from feat-062. tsc/lint/build clean; backend pytest suite (161/161)
+    unaffected beyond the intended schema addition. Killed local uvicorn +
+    next dev cleanly; both ports confirmed clear.
+    feature_list.json's feat-063 status: passing.
 - **Session 038 continued once more (2026-08-05): implemented and
   live-verified feat-062 -- a real percentage progress bar, expanded
   intro/outro status lines, and a renamed CTA.** User asked for more

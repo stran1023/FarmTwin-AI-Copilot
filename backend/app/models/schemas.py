@@ -183,8 +183,19 @@ class DemoUnlockResponse(BaseModel):
     expires_at: datetime
 
 
+class CopilotTurn(BaseModel):
+    """One prior (question, answer) exchange, sent back by the client so the
+    Cortex Agent can answer natural follow-ups -- see app/main.py's
+    ask_copilot for how this is capped and turned into real conversation
+    turns (not a single flattened string) via cortex_agent_client.ask_agent."""
+
+    question: str
+    answer: str
+
+
 class CopilotQuestion(BaseModel):
     question: str
+    history: list[CopilotTurn] = []
 
 
 class CopilotAnswer(BaseModel):

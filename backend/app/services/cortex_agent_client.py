@@ -42,21 +42,48 @@ CORTEX_AGENT_ENDPOINT = (
 )
 
 
-async def ask_agent(prompt: str) -> str:
-    """Send a user prompt to FARM_OPS_AGENT and return its final text response."""
+def _text_message(role: str, text: str) -> dict:
+    return {"role": role, "content": [{"type": "text", "text": text}]}
+
+
+async def ask_agent(prompt: str, history: list[tuple[str, str]] | None = None) -> str:
+    """Send a user prompt to FARM_OPS_AGENT and return its final text response.
+
+    `history` is prior (question, answer) turns from the same copilot
+    conversation, sent as real alternating user/assistant messages (the Run
+    API's real multi-turn shape) ahead of the new prompt -- not concatenated
+    into one string -- so a follow-up like "tell me more about that" is
+    genuinely grounded in what the agent itself said last, not just farm
+    data. Empty/omitted for /workflow/run's and /briefing/today's one-shot
+    calls, which have no conversation to carry."""
     headers = {
         "Authorization": f"Bearer {settings.snowflake_pat}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    messages = []
+    for question, answer in history or []:
+        messages.append(_text_message("user", question))
+        messages.append(_text_message("assistant", answer))
+    messages.append(_text_message("user", prompt))
+
     payload = {
-        "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+        "messages": messages,
         "stream": False,
         "tool_resources": {
             AGRONOMY_SEARCH_TOOL_NAME: {"search_service": AGRONOMY_SEARCH_SERVICE},
         },
     }
-    async with httpx.AsyncClient(timeout=150.0) as client:
+    # 240s, not the original 150s -- a real live test of copilot conversation
+    # memory hit an httpx.ReadTimeout at 150s on a call carrying just one
+    # prior turn (the extra context genuinely makes the agent's own
+    # reasoning take longer), well inside Snowflake's own documented 15-
+    # minute allowance for this endpoint. Applies to every call, not just
+    # history-carrying ones, since a single generous timeout is simpler than
+    # branching on whether `history` is present, and other callers already
+    # tolerate multi-minute waits elsewhere in this app's own UI (e.g. a
+    # multi-asset workflow tick).
+    async with httpx.AsyncClient(timeout=240.0) as client:
         resp = await client.post(CORTEX_AGENT_ENDPOINT, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()

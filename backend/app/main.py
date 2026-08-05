@@ -982,12 +982,22 @@ def get_dashboard_summary():
     )
 
 
+_COPILOT_HISTORY_LIMIT = 6  # most recent turns only -- bounds prompt size/cost even mid-conversation
+
+
 @app.post("/copilot/ask", response_model=CopilotAnswer, dependencies=[Depends(require_demo_access)])
 async def ask_copilot(body: CopilotQuestion):
     """Free-form Q&A, grounded in the farm's real current state via the
     same semantic view /workflow/run and /briefing/today use. Per
     docs/FarmTwin-AI-Copilot.md's decision-intelligence thesis, every
-    answer should end with a concrete next step, not just an observation."""
+    answer should end with a concrete next step, not just an observation.
+
+    body.history carries the client's own conversation so far (cleared
+    client-side whenever the user hits "Clear conversation," which is the
+    only way this ever shrinks -- the server doesn't persist or trim on its
+    own beyond the recency cap below) -- passed through as real multi-turn
+    messages, not flattened into the prompt string, so a genuine follow-up
+    question is grounded in what the agent itself actually said last."""
     prompt = (
         f"{body.question}\n\n"
         "Ground your answer in this farm's actual current data (assets, sensor readings, "
@@ -997,5 +1007,6 @@ async def ask_copilot(body: CopilotQuestion):
         "is fine) -- no markdown headings, no bullet lists, no 6-field recommendation format -- "
         "this answer renders in a chat bubble, not a structured card."
     )
-    raw = await cortex_agent_client.ask_agent(prompt)
+    history = [(turn.question, turn.answer) for turn in body.history[-_COPILOT_HISTORY_LIMIT:]]
+    raw = await cortex_agent_client.ask_agent(prompt, history=history)
     return CopilotAnswer(question=body.question, answer=_clean_agent_answer(raw))

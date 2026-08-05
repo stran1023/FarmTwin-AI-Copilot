@@ -584,10 +584,19 @@ export async function getBriefing(): Promise<Briefing> {
   return { date: b.date, summary: b.summary, decisions }
 }
 
-export function askCopilot(question: string): Promise<CopilotAnswer> {
+export interface CopilotTurn {
+  question: string
+  answer: string
+}
+
+// `history` carries the client's own prior turns for this conversation so
+// the Cortex Agent can answer real follow-ups -- see backend/app/main.py's
+// ask_copilot. Cleared client-side whenever the user hits "Clear
+// conversation" (CopilotPanel.tsx); never persisted server-side.
+export function askCopilot(question: string, history: CopilotTurn[] = []): Promise<CopilotAnswer> {
   return apiFetch<BackendCopilotAnswer>("/copilot/ask", {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, history }),
   })
 }
 

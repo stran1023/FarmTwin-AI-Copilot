@@ -1,8 +1,8 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { Sparkles, Send, User, Bot } from "lucide-react"
-import { askCopilot } from "@/lib/api"
+import { useEffect, useRef, useState } from "react"
+import { Sparkles, Send, User, Bot, Trash2 } from "lucide-react"
+import { askCopilot, type CopilotTurn } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { renderInlineMarkdown, splitIntoSentences } from "@/lib/markdown"
 
@@ -10,7 +10,21 @@ interface ChatMessage {
   id: string
   role: "user" | "assistant"
   text: string
+  /** True only for the local "couldn't reach the model" fallback message --
+   * never sent back as a real prior turn (see buildHistory). */
+  isError?: boolean
 }
+
+const SEED_MESSAGE: ChatMessage = {
+  id: "seed",
+  role: "assistant",
+  text: "Hi, I'm your FarmTwin copilot. Ask me about any asset, alert, or recommendation and I'll explain the reasoning behind it.",
+}
+
+// sessionStorage (not localStorage) -- survives navigating away and back
+// within the same tab/session, but a fresh tab or browser restart starts
+// clean, matching the "plain discard on Clear" scope (no server-side archive).
+const STORAGE_KEY = "farmtwin_copilot_messages"
 
 const SUGGESTIONS = [
   "What needs my attention today?",
@@ -19,18 +33,60 @@ const SUGGESTIONS = [
   "Summarize this week's egg production",
 ]
 
+/** Real (question, answer) turns to send as conversation memory -- skips
+ * the seed greeting (no preceding user question) and any error fallback
+ * message (never a real answer from the agent). */
+function buildHistory(messages: ChatMessage[]): CopilotTurn[] {
+  const turns: CopilotTurn[] = []
+  for (let i = 0; i < messages.length - 1; i++) {
+    const question = messages[i]
+    const answer = messages[i + 1]
+    if (question.role === "user" && answer.role === "assistant" && !answer.isError) {
+      turns.push({ question: question.text, answer: answer.text })
+    }
+  }
+  return turns
+}
+
 export function CopilotPanel() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "seed",
-      role: "assistant",
-      text: "Hi, I'm your FarmTwin copilot. Ask me about any asset, alert, or recommendation and I'll explain the reasoning behind it.",
-    },
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>([SEED_MESSAGE])
   const [input, setInput] = useState("")
   const [pending, setPending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const nextIdRef = useRef(0)
+  const hydratedRef = useRef(false)
+
+  // Restore a persisted conversation client-side only, after the initial
+  // mount -- always rendering the fresh seed on the very first pass (server
+  // and client alike) avoids a hydration mismatch, the same class of bug
+  // this codebase already hit once in lib/useApiData.ts.
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as ChatMessage[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          nextIdRef.current = parsed.length
+          // Deferred so setState doesn't run synchronously within the effect
+          // body (react-hooks/set-state-in-effect) -- same pattern this
+          // codebase already established in lib/useApiData.ts and HealthGauge.tsx.
+          queueMicrotask(() => setMessages(parsed))
+        }
+      }
+    } catch {
+      // Corrupt/unavailable storage -- keep the fresh seed conversation.
+    }
+    hydratedRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
+    } catch {
+      // Persistence is a nice-to-have, not required for the chat to work.
+    }
+  }, [messages])
 
   function nextId(prefix: string) {
     nextIdRef.current += 1
@@ -44,21 +100,38 @@ export function CopilotPanel() {
     })
   }
 
+  function clearConversation() {
+    setMessages([SEED_MESSAGE])
+    nextIdRef.current = 0
+    try {
+      window.sessionStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // Nothing to clean up if storage was never written.
+    }
+  }
+
   async function send(question: string) {
     const q = question.trim()
     if (!q || pending) return
+    // Snapshot conversation memory BEFORE adding this turn's own messages.
+    const history = buildHistory(messages)
     const userMsg: ChatMessage = { id: nextId("u"), role: "user", text: q }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
     setPending(true)
     scrollToBottom()
     try {
-      const { answer } = await askCopilot(q)
+      const { answer } = await askCopilot(q, history)
       setMessages((prev) => [...prev, { id: nextId("a"), role: "assistant", text: answer }])
     } catch {
       setMessages((prev) => [
         ...prev,
-        { id: nextId("e"), role: "assistant", text: "I couldn't reach the farm model just now. Try again in a moment." },
+        {
+          id: nextId("e"),
+          role: "assistant",
+          isError: true,
+          text: "I couldn't reach the farm model just now. Try again in a moment.",
+        },
       ])
     } finally {
       setPending(false)
@@ -72,10 +145,22 @@ export function CopilotPanel() {
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-primary">
           <Sparkles className="h-5 w-5" aria-hidden="true" />
         </span>
-        <div>
+        <div className="flex-1">
           <h2 className="font-serif text-lg font-semibold leading-tight">Farm Copilot</h2>
           <p className="text-xs text-muted-foreground">Grounded in your live twin data</p>
         </div>
+        {messages.length > 1 && (
+          <button
+            type="button"
+            onClick={clearConversation}
+            disabled={pending}
+            title="Clear conversation"
+            aria-label="Clear conversation"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
