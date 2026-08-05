@@ -18,19 +18,18 @@ AGENT_NAME = "FARM_OPS_AGENT"
 # schema (field name "search_service" -- see
 # https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-run).
 #
-# KNOWN LIVE BLOCKER (see progress.md / feature_list.json feat-048/feat-053):
-# FARM_OPS_AGENT's own persisted agent_spec.tool_resources (as created by
-# feat-053's CoCo prompt; confirmed via `DESCRIBE AGENT ... ; SELECT
-# agent_spec:tool_resources`) uses the field name "cortex_search_service"
-# instead. This mismatch makes the platform reject EVERY run call with a 400
-# ("field \"search_service\" is not provided for Cortex Search tool
-# resource") before the agent even executes -- confirmed this isn't a
-# client-payload issue: the identical error occurs whether this client sends
-# no tool_resources at all, "search_service", or "cortex_search_service",
-# nested per-tool or flat. The fix has to happen in the agent's own
-# definition (a new CoCo prompt), which this agent cannot run itself per
-# CLAUDE.md. Sending the textbook-correct field name here regardless, since
-# it's the right thing to do once that's fixed upstream.
+# RESOLVED (feat-053): FARM_OPS_AGENT's own persisted agent_spec.tool_resources
+# originally used the field name "cortex_search_service" instead, which made
+# the platform reject every run call with a 400 ("field \"search_service\" is
+# not provided for Cortex Search tool resource") before the agent even
+# executed -- confirmed a server-side agent-definition bug, not a
+# client-payload issue, by sending 5 different request shapes and getting the
+# identical error regardless. Fixed by re-running a corrective CoCo prompt
+# (snowflake/coco-prompts.md Part 5) to re-point the agent's own
+# tool_resources at the correct field name; re-verified live through this
+# app's real REST integration afterward (see feature_list.json's feat-053
+# evidence). Left as history here since this file is the one place that
+# already had to reason carefully about this field's exact shape.
 AGRONOMY_SEARCH_TOOL_NAME = "search_agronomy"
 AGRONOMY_SEARCH_SERVICE = (
     f"{settings.snowflake_database}.{settings.snowflake_schema}.AGRONOMY_SEARCH"
