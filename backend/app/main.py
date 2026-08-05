@@ -573,12 +573,21 @@ def get_asset_detail(asset_id: str):
     )
     latest_risk = _asset_risk_from_row(risk_rows[0]) if risk_rows else None
 
-    prediction_rows = snowflake_client.run_query(
-        "SELECT * FROM ASSET_RISK_ASSESSMENTS WHERE ASSET_ID = %s AND RISK_TYPE LIKE '%%_forecast_24h' "
-        "ORDER BY TS DESC LIMIT 1",
-        (asset_id,),
-    )
-    prediction = _asset_risk_from_row(prediction_rows[0]) if prediction_rows else None
+    # Only a forecast row from the SAME tick as the current latest_risk counts
+    # -- _run_workflow inserts both with the identical `now` timestamp for a
+    # given tick, so this is a real join, not a heuristic. Without the TS
+    # filter, a stale prediction from days-old at-risk tick would keep
+    # showing (and contradicting) an asset's current healthy state forever,
+    # the same class of bug the /dashboard/summary active_alerts query had.
+    prediction = None
+    if risk_rows:
+        prediction_rows = snowflake_client.run_query(
+            "SELECT * FROM ASSET_RISK_ASSESSMENTS WHERE ASSET_ID = %s "
+            "AND RISK_TYPE LIKE '%%_forecast_24h' AND TS = %s "
+            "ORDER BY TS DESC LIMIT 1",
+            (asset_id, risk_rows[0]["TS"]),
+        )
+        prediction = _asset_risk_from_row(prediction_rows[0]) if prediction_rows else None
 
     history_rows = snowflake_client.run_query(
         "SELECT * FROM ASSET_HISTORY WHERE ASSET_ID = %s ORDER BY PERIOD_LABEL", (asset_id,)

@@ -3,6 +3,36 @@
 ## Current Verified State
 
 - Last Updated: 2026-08-06
+- **Session 039 continued (2026-08-06): implemented and live-verified
+  feat-065 -- fixed stale "AI Prediction" data surfacing on healthy assets.**
+  User reported an asset's AI Prediction card "looking wrong." Investigated
+  live rather than guessing: GET /assets/{id}'s prediction query picked the
+  single most recent forecast_24h row with no bound tying it to the asset's
+  CURRENT state, so once an asset recovered to healthy (via a real tick, or
+  feat-060's reset script), it kept showing an old, unrelated, contradictory
+  forecast indefinitely -- confirmed live, one stale prediction (GH-001) was
+  a full calendar day old. Exact same bug class as feat-060's
+  /dashboard/summary active_alerts fix earlier this session.
+  - Fixed by scoping the prediction query to the exact same TS as the
+    already-fetched latest_risk row -- _run_workflow inserts both with the
+    identical timestamp per tick, so an exact match is a real same-tick
+    join, not a heuristic.
+  - Live verified both directions against the real Snowflake account:
+    before the fix, 3 healthy assets (FP-001, CC-001, GH-001) all returned
+    stale non-null predictions; after the fix, all 5 correctly returned
+    null. Then ran a real tick that genuinely escalated FP-001, and
+    confirmed GET /assets/FP-001 returned a real prediction whose
+    timestamp exactly matched the current latest_risk -- proving the fix
+    still surfaces genuine same-tick predictions, not just suppressing
+    everything.
+  - Re-ran reset_demo_state.py afterward to restore the clean healthy
+    baseline. tsc/lint/build n/a (backend-only); compileall + full pytest
+    suite (161/161) clean. Killed local uvicorn cleanly; port confirmed
+    clear. feature_list.json's feat-065 status: passing.
+  - Worth remembering for any future query over ASSET_RISK_ASSESSMENTS-like
+    append-only history tables: always scope to the asset's actual current
+    state first, then filter by type/level -- never "latest row of type X"
+    in isolation.
 - **Session 039, doc update (2026-08-06): refreshed docs/video-script.md,
   no app/feature change.** User asked whether the video script still fit
   the actual product; it predated feat-057 through feat-064 and had drifted
