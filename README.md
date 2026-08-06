@@ -207,7 +207,7 @@ sequenceDiagram
 
 ![Farm overview](docs/screenshots/farm-overview.png)
 
-Real state at capture time: the healthy default baseline (feat-060) — farm health 90/100, zero active alerts, all 5 assets green, "All caught up — no tasks due today." Running a real "AI Farm Analysis" tick from here has an unscripted chance of escalating an asset, which is the actual demo moment — this is the calm before it, not a staged crisis.
+Real state at capture time: the healthy default baseline (feat-060) — farm health 90/100, zero active alerts, all 5 assets green, "All caught up — no tasks due today." Running a real "Run AI Farm Analysis" tick from here has an unscripted chance of escalating an asset, which is the actual demo moment — this is the calm before it, not a staged crisis.
 
 </details>
 
