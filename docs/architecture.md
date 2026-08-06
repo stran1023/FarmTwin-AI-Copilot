@@ -10,11 +10,12 @@
 > build (superseded 2026-07-14)" — nothing was deleted, the roadmap just moved
 > forward. See `feature_list.json` for the current active features.
 >
-> **Refreshed 2026-07-26:** everything below "What's real vs. planned" and
+> **Refreshed 2026-08-06:** everything below "What's real vs. planned" and
 > the schema table were written at pivot time and describe a target, not
 > the shipped system — updated in place to reflect what's actually live
-> today (5 asset types, 10 Snowflake tables, 2 Cortex Agent tools, 12
-> endpoints). The pivot narrative and the ALERTS/TASKS scope decision
+> today (5 asset types, 10 Snowflake tables, 2 Cortex Agent tools, 15
+> endpoints — see `docs/ui-build-plan.md`'s "Data contract summary"). The
+> pivot narrative and the ALERTS/TASKS scope decision
 > below are unchanged history and still accurate as written.
 
 ## Why the pivot
@@ -30,10 +31,10 @@ four different asset types) don't reconcile without a schema rewrite, so this
 is a full pivot rather than an additive layer. Decisions below were confirmed
 with the user on 2026-07-14.
 
-## What's real (as of 2026-07-26)
+## What's real (as of 2026-08-06)
 
 Everything in the original pivot table has shipped, plus substantially
-more built across `feat-030`-`feat-056`. Current state, not a plan:
+more built across `feat-030`-`feat-065`. Current state, not a plan:
 
 | Piece                              | Status                                       |
 |-------------------------------------|-----------------------------------------------|
@@ -51,6 +52,12 @@ more built across `feat-030`-`feat-056`. Current state, not a plan:
 | Scenario Simulator (`feat-055`)     | Real — deterministic what-if intervention projection (`backend/app/services/scenario_engine.py`), agent narrates |
 | Yield Estimation (`feat-056`)       | Real — deterministic yield estimate from real `ASSET_HISTORY` records × current health score (`backend/app/services/yield_estimator.py`), agent narrates, all 5 asset types |
 | Live workflow progress panel (`feat-057`) | Real — `POST /workflow/run/start` + `GET /workflow/run/status/{job_id}` (polled), reports real per-asset step + metric as `/workflow/run`'s loop actually runs |
+| Before/after diff highlight on tick completion (`feat-058`) | Real — a brief amber "just updated" glow on any marker whose status/health changed or that got new recommendations, plus a real +/- health-score delta chip, both computed from a real before/after snapshot diff, not a guess |
+| Cinematic processing sequence + real progress bar (`feat-059`, `feat-062`) | Real — sequential intro/outro status lines, a percentage bar reflecting genuine phase/step completion (not a fake timer), button relabeled "Run AI Farm Analysis" |
+| Healthy-baseline demo default (`feat-060`) | Real — `scripts/reset_demo_state.py` now seeds all 5 assets healthy (farm_health_score=90, zero active alerts) instead of a permanent fish-pond crisis; a real tick has a genuine (unscripted) chance of escalating one or more assets, tuned around the Chicken Coop's constant per-tick feed-level drift |
+| Critical-outcome banner variant (`feat-061`) | Real — the tick-completion screen branches on the backend's own real `highRiskCount`: a red "Critical Farm Changes Detected" banner naming the real at-risk asset(s) when the tick's outcome warrants it, instead of always showing the same positive message |
+| Real conversational memory + Clear button (`feat-063`) | Real — `POST /copilot/ask` accepts up to the last 6 prior (question, answer) turns as genuine multi-turn Cortex Agents Run API messages (capped server-side); persisted client-side in `sessionStorage` (survives navigation, not a new browser session); a header "Clear conversation" button plainly discards it — no server-side conversation archive |
+| Passcode-gate recovery in Copilot (`feat-064`) | Real — a 401 from the demo passcode gate now surfaces an inline unlock prompt in the Copilot panel itself (mirroring the Farm view's existing gate handling) and automatically retries the original question on success, instead of silently dead-ending |
 
 ## Farm Assets (replaces the 15-rice-farm model)
 

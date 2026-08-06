@@ -47,6 +47,12 @@ The part that makes it trustworthy rather than just impressive: **the agent neve
 ### 🧠 A Real AI Copilot, Not a Chatbot Wrapper
 - **Two distinct Cortex tools working together** — `query_farm_ops` (Cortex Analyst text-to-SQL over a live semantic view) for "what's happening right now," and `search_agronomy` (Cortex Search over a best-practice knowledge base) for "what should I generally do" — so the agent cites *which kind* of source grounds each part of its answer
 - **Free-form Q&A** grounded in the farm's actual current state, never generic advice — ask "what happens if I skip aeration tonight?" and get an answer citing this pond's real DO reading, not a textbook average
+- **Real conversational memory** — a follow-up like "can you say more about that?" is answered grounded in what the agent itself just said, carrying up to 6 prior turns as genuine multi-turn context; a "Clear conversation" button plainly discards it (no server-side conversation archive)
+
+### 🎬 A Demo That Shows Its Work
+- **"Run AI Farm Analysis"** opens a live progress panel — real per-asset steps (Observing → Assessing → Consulting the Cortex Agent) with real live metric values, not a bare spinner for the ~3-5 minutes the real workflow tick takes
+- **Before/after diff highlighting** — when a tick finishes, only the asset marker(s) and health-score delta that *actually changed* flash on screen, computed from a real before/after snapshot diff
+- **A genuinely healthy default state** — the farm opens fully green (health score 90, zero active alerts); running a real analysis has an unscripted chance of escalating an asset, so the "before and after" moment on screen is real, not staged
 
 ### 📊 Decision Intelligence, Not Monitoring
 - **Harvest Planner** — a real projected ETA ("ready in ~14.2 days") derived from this asset's own readiness trend, not a guess
@@ -292,7 +298,10 @@ SNOWFLAKE_PAT=
 OPEN_METEO_BASE_URL=
 BACKEND_PORT=
 FRONTEND_URL=
+DEMO_PASSCODE=
 ```
+
+`DEMO_PASSCODE` gates Cortex-Agent-triggering endpoints (`/workflow/run*`, `/copilot/ask`) behind a shared passcode — leave unset for local dev (the gate is a no-op), set a real value only on a public deployment. Both the Farm view's "Run AI Farm Analysis" button and the Copilot chat share one unlock: entering it on either surface unlocks both for the rest of the session.
 
 `.env.local` (frontend):
 

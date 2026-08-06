@@ -1,19 +1,21 @@
 # UI build plan — FarmTwin AI Copilot
 
 > **Status: original target design (2026-07-14), corrected in place
-> 2026-07-26.** It replaces the prior 3-screen rice-cooperative plan (card
+> 2026-08-06.** It replaces the prior 3-screen rice-cooperative plan (card
 > list → risk/work-order detail → briefing, real Leaflet/OpenStreetMap
 > Screen 1). That build shipped and passed (`feat-001`–`feat-007`); its
 > evidence lives in `progress.md` under "Legacy: rice-cooperative build
 > (superseded 2026-07-14)." The map approach explicitly changes here:
 > **isometric digital twin, not real geography** — confirmed with the
 > user on 2026-07-14 over the working Leaflet/OSM implementation. Screens
-> 1-5 below shipped close to spec; the two corrections inline are a 5th
-> asset type (Greenhouse) and the Screen 4 Copilot layout decision, which
-> was actually resolved differently than "decide at implementation time"
-> implied. For the as-built frontend (directory layout, real component
-> list), see `docs/frontend-architecture.md` — that's the more current
-> reference; this doc is still accurate for screen intent and the
+> 1-5 below shipped close to spec; corrections inline since cover a 5th
+> asset type (Greenhouse), the Screen 4 Copilot layout decision (resolved
+> differently than "decide at implementation time" implied), Screen 2's
+> Active Alerts/Daily Recommendations removal (`feat-045`/`feat-046`),
+> and Screen 3's Today's Tasks removal + collapsible History
+> (`feat-047`). For the as-built frontend (directory layout, real
+> component list), see `docs/frontend-architecture.md` — that's the more
+> current reference; this doc is still accurate for screen intent and the
 > underlying data model.
 
 Scope: one real farm, **five** heterogeneous assets (Fish Pond, Chicken
@@ -70,19 +72,35 @@ SVG terrain/markers. No isometric-map library, no canvas/game engine. See
 **Purpose:** answer "How is my farm doing today?" within a few seconds, per
 the vision doc's dashboard requirement.
 
-Display:
+**Revised (`feat-045`/`feat-046`, 2026-07-20):** Active Alerts and Daily
+Recommendations were removed from this screen — they duplicated
+information the map and Screen 3 already surface (marker rings/badges,
+each asset's own Recommendations list) and were flagged by the user as
+"over information." Asset Status also moved off this panel onto the map
+itself. Current Screen 2 display:
 
-- Overall Farm Health Score (aggregate across all 5 assets)
-- Active Alerts (derived: latest `ASSET_RISK_ASSESSMENTS` at high/critical)
-- Tasks Due Today (derived: `RECOMMENDATIONS` with `status = 'pending_approval'`)
-- Farm Statistics (asset count, simple per-type summary)
-- Simulated Weather + Weather Forecast (Open-Meteo, farm-wide)
-- Daily Recommendations (top N structured recommendations, priority-sorted)
-- Asset Status Overview (compact per-asset health/status row, links into
-  Screen 3)
+- Overall Farm Health Score (aggregate across all 5 assets), with a 0-100
+  gauge and a session-scoped trend arrow (`feat-037`)
+- Weather — one primary metric (temperature, large) with humidity/
+  rainfall/wind as smaller secondary text (`feat-038`)
+- Tasks Due Today (derived: `RECOMMENDATIONS` with
+  `status = 'pending_approval'`, full-width) — each row is directly
+  clickable to open that task's asset in Screen 3, and hovering a row
+  highlights the matching marker on the map (`feat-046`)
+- Asset Status — a real per-status asset-count pill ("Critical 1 /
+  Attention 0 / Healthy 3") at the map's bottom-center, computed
+  client-side from the fetched assets list, not a separate dashboard card
+  (`feat-045`)
 
 Data source: `GET /dashboard/summary` — aggregates across `FARM_ASSETS`,
 `ASSET_RISK_ASSESSMENTS`, `RECOMMENDATIONS`, `WEATHER_READINGS`.
+
+**Run AI Farm Analysis:** the button that triggers `POST /workflow/run`
+(originally labeled "Run Farm Tick," renamed `feat-062`) opens a live
+progress panel rather than blocking behind a bare spinner — see
+`docs/architecture.md`'s "What's real" table (`feat-057`-`feat-062`) for
+the full mechanism (per-asset live steps, before/after diff highlighting,
+critical-outcome banner).
 
 ---
 
@@ -101,24 +119,29 @@ Panels:
    asset's current condition (not a repeated sensor dump)
 3. **Recommendation card(s)** — one card per pending recommendation, full
    6-field structured format (see `docs/FarmTwin-AI-Copilot.md`'s
-   "Recommendation Format") plus Approve / Reject buttons
-4. **Today's tasks** — this asset's pending recommendations, task-framed
-5. **Prediction** — short-horizon forecast for this asset (e.g. "if this
+   "Recommendation Format") plus Approve / Reject buttons, collapsed to
+   just the action + priority badge by default (`feat-036`)
+4. **Prediction** — short-horizon forecast for this asset (e.g. "if this
    trend continues, dissolved oxygen drops below safe levels within 18
-   hours")
-6. **Harvest Planner** (`feat-054`, crop assets only — rice field, orchard,
+   hours"); only ever shown when it's actually consistent with the
+   asset's current status — a healthy asset correctly shows "No
+   prediction available yet" instead of a stale forecast left over from
+   a past incident (`feat-065`)
+5. **Harvest Planner** (`feat-054`, crop assets only — rice field, orchard,
    greenhouse) — deterministic readiness-trend ETA ("ready now" or a real
    projected days-until-threshold), agent-narrated. Not shown for fish
    pond/chicken coop, which have no harvest-readiness concept.
-7. **Scenario Simulator** (`feat-055`) — pick a real candidate
+6. **Scenario Simulator** (`feat-055`) — pick a real candidate
    intervention (or "do nothing") for this asset's current risk, see a
    6h/24h projected-outcome comparison, agent-narrated. Only renders when
    the asset has an active, trackable risk.
-8. **Yield Estimate** (`feat-056`, all 5 asset types) — deterministic
+7. **Yield Estimate** (`feat-056`, all 5 asset types) — deterministic
    next-cycle yield estimate from this asset's real historical yield
    record, adjusted for current health, agent-narrated.
-9. **History** — recent `ASSET_HISTORY` entries (yield, production,
-   biomass, as applicable to the asset type)
+8. **History** — recent `ASSET_HISTORY` entries (yield, production,
+   biomass, as applicable to the asset type), collapsed by default behind
+   a "History" toggle in the header card next to the risk badge
+   (`feat-047`) — not a separate always-visible card
 
 Data source: `GET /assets/{id}` (readings + risk + history) and
 `GET /assets/{id}/recommendations` (structured cards). Approve/reject:
@@ -188,7 +211,9 @@ Data source: `GET /briefing/today` (rebuilt on `RECOMMENDATIONS` instead of
 | Endpoint | Method | Returns |
 |---|---|---|
 | `/health` | GET | liveness check |
-| `/workflow/run` | POST | the core Observe→Understand→Recommend→Predict tick: simulates + persists readings, assesses risk, calls the agent for at-risk assets, writes recommendations |
+| `/workflow/run` | POST | the core Observe→Understand→Recommend→Predict tick: simulates + persists readings, assesses risk, calls the agent for at-risk assets, writes recommendations. Kept contract-stable (no progress tracking) for backward compatibility |
+| `/workflow/run/start` | POST | starts the same tick as a background job, returns `job_id` immediately (`feat-057`) — what the "Run AI Farm Analysis" button actually calls |
+| `/workflow/run/status/{job_id}` | GET | read-only poll target for the live per-asset progress panel (`feat-057`) — never triggers a Cortex call itself |
 | `/assets` | GET | all farm assets with latest health/status/risk |
 | `/assets/{id}` | GET | asset detail: readings, risk, prediction, history |
 | `/assets/{id}/harvest-plan` | GET | Harvest Planner (`feat-054`) — crop assets only, 400s otherwise |

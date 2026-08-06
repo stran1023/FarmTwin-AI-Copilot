@@ -1,7 +1,7 @@
 # Frontend architecture & UI/UX flow — FarmTwin AI Copilot
 
 > **Status: as-built, v0 redesign (2026-07-16), directory layout refreshed
-> 2026-07-26.** `frontend/` was fully replaced in Session 022 (`feat-039`)
+> 2026-08-06.** `frontend/` was fully replaced in Session 022 (`feat-039`)
 > by a separately-built, v0.app-generated Next.js frontend (originally
 > `farmtwin-ai-copilot-frontend/`), wired to the real backend. It
 > supersedes the shadcn-free build described in earlier revisions of this
@@ -53,7 +53,27 @@ frontend/
                              (feat-054, crop assets only) and
                              ScenarioSimulatorCard (feat-055, any asset
                              with an active trackable risk)
-    CopilotPanel.tsx         chat UI — used standalone at /copilot, not a persistent overlay
+    CopilotPanel.tsx         chat UI — used standalone at /copilot, not a persistent overlay.
+                             Persists messages to sessionStorage (feat-063),
+                             sends up to the last 6 turns as real
+                             conversation history, has a header "Clear
+                             conversation" button, and catches a 401 from
+                             the demo passcode gate with an inline unlock
+                             prompt that retries the original question
+                             (feat-064)
+    DemoTriggerButton.tsx    "Run AI Farm Analysis" button (feat-057,
+                             renamed feat-062) — starts a workflow job via
+                             POST /workflow/run/start and opens
+                             WorkflowProgressPanel instead of blocking
+    WorkflowProgressPanel.tsx modal polled every 2s against GET
+                             /workflow/run/status/{job_id} — real per-asset
+                             live steps (feat-057), a cinematic
+                             intro/live/outro/refreshing/done phase
+                             sequence with a real percentage progress bar
+                             (feat-059, feat-062), and a success screen
+                             that branches into a critical-outcome variant
+                             when the tick's real result warrants it
+                             (feat-061)
     BriefingView.tsx         Daily Briefing screen (Screen 5) shell
     BriefingOverview.tsx     prose summary card within BriefingView — sentence-
                              split via lib/markdown.tsx, same pattern the
@@ -64,7 +84,16 @@ frontend/
   lib/
     api.ts                 real backend calls + mapping onto this frontend's own types
     types.ts                this frontend's own data contract (Asset, Recommendation, ...)
-    dataCache.ts             module-level fetch cache: dedup, TTL, cross-component invalidate()
+    dataCache.ts             module-level fetch cache: dedup, TTL, cross-component
+                             invalidate(); also invalidateAndWait<T>() (returns the
+                             freshly-fetched value so a caller can diff against a
+                             pre-refetch snapshot) and setValue<T>() for cache keys
+                             with no fetcher (feat-058)
+    tickDiff.ts              computeTickDiff(): real before/after Asset[]/
+                             DashboardSummary comparison (status, health_score,
+                             which assets got new recommendations) published
+                             under a short-lived cache key so the map/dashboard
+                             can flash exactly what a tick actually changed (feat-058)
     useApiData.ts            React hook over dataCache.ts via useSyncExternalStore
     iso.ts                   shared 2:1 isometric projection math (terrain + markers)
     markdown.tsx             minimal bold-only markdown + sentence-splitting
@@ -156,16 +185,38 @@ What's different in this redesign:
   screen you visit occasionally" requirement and from the prior build's
   explicit design choice (Session 013, `feat-018`) to mount the panel in
   the root layout specifically so conversation state survives
-  navigation. In this redesign, navigating away from `/copilot` resets
-  the chat. This was not changed during the Session 022 backend
-  integration (out of scope — data wiring only); flagged here for a
-  future decision, not fixed silently.
+  navigation. At Session 022 integration time, navigating away from
+  `/copilot` reset the chat entirely; **resolved by `feat-063`**
+  (2026-08-05) — messages now persist to `sessionStorage`, so the
+  conversation (and up to 6 turns of real history sent back to the
+  agent) survives navigating to another screen and back, only resetting
+  on a fresh tab/browser restart or an explicit "Clear conversation"
+  click.
 - **Recommendation cards**: ship collapsed-by-default (`feat-036`'s
   progressive-disclosure behavior from the prior build) from the start,
   via `RecommendationCard.tsx`'s own local `expanded` state.
 - **Daily briefing**: `BriefingView.tsx` renders the summary plus a
   timeline-styled "Decision Log" (visually new; same underlying data —
   approved + rejected recommendations, real Cortex-generated summary).
+- **Run AI Farm Analysis** (`feat-057`-`feat-062`, originally "Run Farm
+  Tick"): clicking it no longer blocks behind a bare spinner. It starts a
+  background job (`POST /workflow/run/start`) and opens
+  `WorkflowProgressPanel`, which polls `GET /workflow/run/status/{job_id}`
+  every 2s and plays a real cinematic sequence — intro lines, the real
+  per-asset Observe/Assess/Consult-the-Agent list with live metric
+  snippets, outro lines, then a success (or, when the tick's real outcome
+  warrants it, red "Critical Farm Changes Detected") screen. On
+  completion, `DemoTriggerButton` snapshots the pre-tick `assets`/
+  `dashboard-summary` cache state, refetches, diffs the two via
+  `lib/tickDiff.ts`, and flashes only the markers/health-score delta that
+  actually changed (`feat-058`) — nothing is faked or animated on a fixed
+  timer independent of the real result.
+- **Demo baseline**: `scripts/reset_demo_state.py` (`feat-060`) now seeds
+  a genuinely healthy farm (all 5 assets healthy, health score 90, zero
+  active alerts) as the default starting state, replacing the prior
+  permanent fish-pond-crisis default — a real Run AI Farm Analysis tick
+  from that baseline has a real, unscripted chance of escalating one or
+  more assets.
 
 ## Known, pre-existing issues found during the Session 022 integration
 

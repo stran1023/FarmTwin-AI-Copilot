@@ -2,7 +2,7 @@
 
 > Architecture reference — from *monitoring* to *decision intelligence*.
 > Built for the Snowflake AI Hackathon on Snowflake CoCo CLI, Cortex AI,
-> and Agent Skills. Last synced to the shipped system: 2026-07-27 — see
+> and Agent Skills. Last synced to the shipped system: 2026-08-06 — see
 > `docs/architecture.md` for full current system state and
 > `feature_list.json`/`progress.md` for the real evidence trail.
 
@@ -252,10 +252,18 @@ flowchart TB
 | Domain knowledge | `AGRONOMY_NOTES` + rule tables — general best practice, not this farm's own events | Static, curated |
 | Working memory | Whatever rows a tool call returns for one specific prompt | Discarded after the response |
 
-**There is no cross-session conversational memory.** Every
-`/copilot/ask` call is stateless from the agent's perspective — re-grounded
-from Snowflake every time. This is deliberate: it guarantees answers
-reflect the farm's real current state, never a stale cached belief.
+**Conversational memory is real but deliberately session-scoped, not
+persisted.** `POST /copilot/ask` (`feat-063`) carries the last 6 prior
+(question, answer) turns as genuine multi-turn messages in the Cortex
+Agents Run API's own message array, so a follow-up like "can you say more
+about that?" is answered grounded in what the agent itself just said —
+not treated as a brand-new isolated question. The frontend persists this
+history in `sessionStorage` (survives navigating to another screen and
+back, resets on a fresh tab/restart) and a "Clear conversation" button
+plainly discards it — there is no server-side archive of past
+conversations, and no *cross-session* memory: every fresh conversation
+still re-grounds from Snowflake's real current state rather than a stale
+cached belief.
 
 ---
 
@@ -339,9 +347,9 @@ sequenceDiagram
 | Surface | Purpose |
 |---|---|
 | **Digital Twin** (home) | Isometric map, one object per asset, color-coded, hover/click into detail |
-| **Dashboard** | Answers "How is my farm doing today?" in seconds: health score, active alerts, tasks due, weather, top recommendations |
-| **Asset Detail** | Readings, AI analysis, recommendations, Harvest Planner, Scenario Simulator, Yield Estimate, history |
-| **AI Copilot** | Free-form Q&A, grounded in current farm state, dedicated route |
+| **Dashboard** | Answers "How is my farm doing today?" in seconds: health score + trend gauge, one-glance weather, full-width Tasks Due Today (click or hover to jump to the map marker) — Active Alerts and Daily Recommendations were deliberately removed (`feat-045`) as redundant with the map and each asset's own detail view |
+| **Asset Detail** | Readings, AI analysis, recommendations (collapsed by default), Harvest Planner, Scenario Simulator, Yield Estimate, collapsible history |
+| **AI Copilot** | Free-form Q&A, grounded in current farm state, dedicated route, real multi-turn conversational memory within a session (`feat-063`) |
 | **Daily Briefing** | Today's approved/rejected recommendations, generated summary |
 
 Full screen-by-screen UI spec: `docs/ui-build-plan.md`. As-built frontend
