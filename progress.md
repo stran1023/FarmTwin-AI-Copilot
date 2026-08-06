@@ -2,7 +2,37 @@
 
 ## Current Verified State
 
-- Last Updated: 2026-08-06
+- Last Updated: 2026-08-07
+- **Session 040, doc update (2026-08-07): refreshed README.md screenshots and
+  captions, no app/feature change.** The 3 demo screenshots (farm-overview,
+  asset-detail, copilot) were captured 2026-07-27/08-03, before feat-057
+  through feat-065 shipped, and had drifted from reality -- most visibly,
+  farm-overview.png showed "1 critical, 1 needs-attention" while the
+  README's own feature list already claimed the app opens on a healthy
+  90/100 baseline (feat-060). Recaptured all 3 live against the running
+  backend + frontend + real Snowflake account (backend started via
+  `venv/Scripts/python.exe -m uvicorn`, frontend via `npm run dev`, browser
+  automation via claude-in-chrome) rather than editing captions to match
+  stale images: farm-overview now shows the real healthy baseline;
+  asset-detail shows Greenhouse A's real live Harvest Planner narrative
+  (honestly reporting no projectable ETA yet, since readiness isn't
+  trending) and a real Yield Estimate (273 kg, 80% confidence) computed
+  from its actual 3-cycle historical average; copilot shows a real
+  "What should I do today?" answer citing live per-asset data plus the
+  feat-063 "Clear conversation" control. Note for future screenshot
+  sessions: the frontend's demo-passcode UI (`useGatedAction`) always
+  prompts for a passcode on first reveal regardless of whether
+  `DEMO_PASSCODE` is actually set server-side (it's unset in this repo's
+  local `.env`, so the backend gate itself is a no-op) -- worked around by
+  writing a dummy token directly into `localStorage['farmtwin_demo_token']`
+  rather than fighting the passcode prompt, since the backend never
+  validates it when the gate is disabled. Also trimmed the Future Work
+  section: removed the already-triaged "not planned" / "actively avoided"
+  items and the shipped Yield Estimation line (settled decisions, not open
+  roadmap items -- still explained in Innovation/Challenges), keeping only
+  the one genuinely unimplemented item (Scenario-Simulator-aware Copilot
+  guardrail, confirmed absent from the backend by grep). Not logged as a
+  feature_list.json entry -- documentation only, no app behavior changed.
 - **Session 039 continued (2026-08-06): implemented and live-verified
   feat-065 -- fixed stale "AI Prediction" data surfacing on healthy assets.**
   User reported an asset's AI Prediction card "looking wrong." Investigated
