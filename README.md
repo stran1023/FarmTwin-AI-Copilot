@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 
-**Links:** 🌐 [\<DEMO_URL\>](<DEMO_URL>) &nbsp;·&nbsp; 🎥 [\<VIDEO_URL\>](<VIDEO_URL>) &nbsp;·&nbsp; 📖 [\<DEVPOST_URL\>](<DEVPOST_URL>) &nbsp;·&nbsp; 💻 [GitHub](https://github.com/stran1023/FarmTwin-AI-Copilot)
+**Links:** 🎥 [VIDEO_URL](https://youtu.be/gahTtustuBI) &nbsp;·&nbsp; 💻 [GitHub](https://github.com/stran1023/FarmTwin-AI-Copilot)
 
 Built for the **Snowflake AI Hackathon 2026** — Domain-Specific AI Copilot track.
 
